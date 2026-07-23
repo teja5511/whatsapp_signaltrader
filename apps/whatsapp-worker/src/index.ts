@@ -1,22 +1,28 @@
-/**
- * WhatsApp Ingestion Worker Shell
- * Phase 2 Scaffold Version
- */
-import http from "http";
+import { WhatsAppWorkerApp } from "./app";
 
-const PORT = process.env.PORT || 3001;
+export * from "./constants";
+export * from "./errors";
+export * from "./config/schema";
+export * from "./config/loader";
+export * from "./config/paths";
+export * from "./contracts";
+export * from "./state/worker-state";
+export * from "./state/event-bus";
+export * from "./openwa/adapter";
+export * from "./openwa/fake-adapter";
+export * from "./openwa/real-adapter";
+export * from "./openwa/client-factory";
+export * from "./openwa/session";
+export * from "./openwa/filters";
+export * from "./openwa/spool";
+export * from "./openwa/delivery";
+export * from "./openwa/quarantine";
+export * from "./app";
 
-const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "healthy", service: "whatsapp-worker", timestamp: new Date().toISOString() }));
-    return;
-  }
-
-  res.writeHead(404, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "Not Found" }));
-});
-
-server.listen(PORT, () => {
-  console.log(`[WhatsApp Worker] Service shell running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  const app = new WhatsAppWorkerApp();
+  app.start().catch((err) => {
+    console.error("[WhatsApp Worker Fatal Error]", err);
+    process.exit(1);
+  });
+}

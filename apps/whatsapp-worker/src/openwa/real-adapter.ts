@@ -1,0 +1,126 @@
+import { OpenWAAdapterInterface } from "./adapter";
+import { GroupSummary, GroupAdminSummary } from "../contracts";
+import { ConnectionState, QrState } from "../constants";
+
+export class RealOpenWAAdapter implements OpenWAAdapterInterface {
+  public readonly mode = "real";
+  public connectionState: ConnectionState = ConnectionState.STOPPED;
+  public qrState: QrState = QrState.NOT_REQUIRED;
+
+  private client: any = null;
+  private messageCallback: ((msg: any) => void) | null = null;
+
+  constructor(
+    private sessionName: string = "xauusd-bot",
+    private sessionDir?: string,
+    private qrCallback?: (qrPayload: string) => void
+  ) {}
+
+  async initialize(): Promise<boolean> {
+    try {
+      this.connectionState = ConnectionState.STARTING;
+      let wa: any;
+      try {
+        wa = require("@open-wa/wa-automate");
+      } catch {
+        this.connectionState = ConnectionState.ERROR;
+        throw new Error("Package '@open-wa/wa-automate' is not installed in workspace.");
+      }
+
+      this.connectionState = ConnectionState.WAITING_FOR_QR;
+      this.client = await wa.create({
+        sessionId: this.sessionName,
+        multiDevice: true,
+        authTimeout: 60,
+        blockCrashLogs: true,
+        disableSpins: true,
+        headless: true,
+        qrTimeout: 0,
+        qrRefreshS: 15,
+        sessionDataPath: this.sessionDir,
+        qrCallback: (qr: string) => {
+          this.qrState = QrState.AVAILABLE;
+          if (this.qrCallback) this.qrCallback(qr);
+        }
+      });
+
+      this.connectionState = ConnectionState.CONNECTED;
+      this.qrState = QrState.AUTHENTICATED;
+
+      if (this.client && this.messageCallback) {
+        this.client.onAnyMessage((msg: any) => {
+          if (this.messageCallback) this.messageCallback(msg);
+        });
+      }
+
+      this.connectionState = ConnectionState.READY;
+      return true;
+    } catch (err: any) {
+      this.connectionState = ConnectionState.ERROR;
+      this.qrState = QrState.FAILED;
+      return false;
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.kill();
+      } catch {}
+    }
+    this.connectionState = ConnectionState.STOPPED;
+  }
+
+  async listGroups(): Promise<GroupSummary[]> {
+    if (!this.client) return [];
+    try {
+      const chats = await this.client.getAllGroups();
+      return chats.map((c: any) => ({
+        group_id: c.id._serialized || c.id,
+        display_name: c.formattedTitle || c.name || "Group",
+        participant_count: c.groupMetadata?.participants?.length || 0,
+        is_read_only: Boolean(c.isReadOnly),
+        is_community: Boolean(c.isParentGroup),
+        is_announcement: Boolean(c.isAnnounceGrpServ),
+        is_archived: Boolean(c.archive)
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async getGroupAdmins(groupId: string): Promise<GroupAdminSummary[]> {
+    if (!this.client) return [];
+    try {
+      const members = await this.client.getGroupAdmins(groupId);
+      return members.map((m: any) => {
+        const idStr = typeof m === "string" ? m : m._serialized || m.id;
+        return {
+          admin_id: idStr,
+          display_name: idStr,
+          is_admin: true,
+          is_super_admin: false,
+          is_group_member: true
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  onMessage(callback: (msg: any) => void): void {
+    this.messageCallback = callback;
+    if (this.client) {
+      this.client.onAnyMessage((msg: any) => callback(msg));
+    }
+  }
+
+  async logout(): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.logout();
+      } catch {}
+    }
+    this.connectionState = ConnectionState.LOGGED_OUT;
+  }
+}
