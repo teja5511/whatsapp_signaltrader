@@ -38,7 +38,7 @@ foreach ($doc in $RequiredDocs) {
 # 2. Verify Monorepo Workspace Packages
 Write-Host "`n[2/4] Verifying Monorepo Workspace Packages..." -ForegroundColor Yellow
 $RequiredPackages = @(
-    "packages/contracts/package.json",
+    "packages/shared-contracts/package.json",
     "packages/ui/package.json",
     "packages/parser-fixtures/package.json",
     "apps/whatsapp-worker/package.json",

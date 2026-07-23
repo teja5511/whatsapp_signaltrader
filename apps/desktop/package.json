@@ -10,7 +10,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@whatsapp-bot/contracts": "workspace:*",
+    "@whatsapp-bot/shared-contracts": "workspace:*",
     "@whatsapp-bot/ui": "workspace:*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

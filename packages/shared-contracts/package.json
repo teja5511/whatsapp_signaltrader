@@ -1,17 +1,17 @@
 {
-  "name": "@whatsapp-bot/contracts",
+  "name": "@whatsapp-bot/shared-contracts",
   "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "lint": "tsc --noEmit",
-    "test": "echo \"No tests for contracts package yet\""
+    "test": "echo \"No tests for shared-contracts package yet\""
   },
   "dependencies": {
-    "zod": "^3.25.76"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.4.0"
   }
 }
