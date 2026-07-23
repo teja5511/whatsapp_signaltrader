@@ -2,7 +2,7 @@ import hashlib
 import json
 from uuid import uuid4
 from datetime import datetime, timezone
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from src.database.unit_of_work import UnitOfWork
 from src.database.engine import SessionLocal
 from src.database.models import WhatsAppMessageModel, ParsedMessageModel, SignalModel
@@ -12,6 +12,25 @@ from src.parser.result import ParserResult
 class MessageParsingService:
     def __init__(self, session_factory=SessionLocal):
         self.session_factory = session_factory
+
+    def parse_stateless(
+        self,
+        text: str,
+        message_id: str,
+        group_id: str,
+        sender_id: str,
+        quoted_message_id: Optional[str] = None,
+        is_reply: bool = False
+    ) -> Dict[str, Any]:
+        res = parse_raw_text(
+            raw_text=text,
+            message_id=message_id,
+            group_id=group_id,
+            sender_id=sender_id,
+            quoted_message_id=quoted_message_id,
+            is_reply=is_reply
+        )
+        return res.to_dict()
 
     def parse_and_persist(
         self,
@@ -60,44 +79,62 @@ class MessageParsingService:
                 quoted_message_id=quoted_message_id,
                 is_reply=is_reply
             )
-            result_dict = parse_result.to_dict()
+            parse_dict = parse_result.to_dict()
+            category_val = parse_result.category.value if hasattr(parse_result.category, "value") else str(parse_result.category)
 
-            # 3. Store Parsed Message
-            parsed_uuid = str(uuid4())
+            # 3. Store Parsed Message Record
+            parsed_id = str(uuid4())
             parsed_rec = ParsedMessageModel(
-                id=parsed_uuid,
+                id=parsed_id,
                 raw_message_id=message_id,
-                message_type=parse_result.category,
-                parsed_json=json.dumps(result_dict),
+                message_type=category_val,
+                parsed_json=json.dumps(parse_dict),
                 parsed_at=now_utc
             )
             uow.db.add(parsed_rec)
             uow.db.flush()
 
             # 4. Store Signal Record if NEW_SIGNAL
-            if parse_result.category == "NEW_SIGNAL" and parse_result.signal:
-                sig_data = parse_result.signal
-                sig_uuid = str(uuid4())
-                sig_rec = SignalModel(
-                    id=sig_uuid,
-                    parsed_message_id=parsed_uuid,
-                    symbol=sig_data["instrument"],
-                    direction=sig_data["direction"],
-                    entry_min=float(sig_data["zoneLow"]),
-                    entry_max=float(sig_data["zoneHigh"]),
-                    stop_loss=float(sig_data["stopLoss"]) if sig_data["stopLoss"] else 0.0,
-                    tp1=float(sig_data["tp1"]) if sig_data["tp1"] else None,
-                    tp2=float(sig_data["tp2"]) if sig_data["tp2"] else None,
-                    has_tp_open=sig_data["tpOpenPresent"],
+            if category_val == "NEW_SIGNAL" and parse_result.signal:
+                sig_dto = parse_result.signal
+                if isinstance(sig_dto, dict):
+                    instrument = sig_dto.get("instrument", "XAUUSD")
+                    direction_val = str(sig_dto.get("direction", "SELL"))
+                    entry_min = float(sig_dto.get("zoneLow", 0.0))
+                    entry_max = float(sig_dto.get("zoneHigh", 0.0))
+                    stop_loss = float(sig_dto.get("stopLoss")) if sig_dto.get("stopLoss") else 0.0
+                    tp1 = float(sig_dto.get("tp1")) if sig_dto.get("tp1") else None
+                    tp2 = float(sig_dto.get("tp2")) if sig_dto.get("tp2") else None
+                    has_tp_open = bool(sig_dto.get("tpOpenPresent", False))
+                else:
+                    instrument = sig_dto.instrument
+                    direction_val = sig_dto.direction.value if hasattr(sig_dto.direction, "value") else str(sig_dto.direction)
+                    entry_min = float(sig_dto.zoneLow)
+                    entry_max = float(sig_dto.zoneHigh)
+                    stop_loss = float(sig_dto.stopLoss) if sig_dto.stopLoss else 0.0
+                    tp1 = float(sig_dto.tp1) if sig_dto.tp1 else None
+                    tp2 = float(sig_dto.tp2) if sig_dto.tp2 else None
+                    has_tp_open = sig_dto.tpOpenPresent
+
+                signal_rec = SignalModel(
+                    id=str(uuid4()),
+                    parsed_message_id=parsed_id,
+                    symbol=instrument,
+                    direction=direction_val,
+                    entry_min=entry_min,
+                    entry_max=entry_max,
+                    stop_loss=stop_loss,
+                    tp1=tp1,
+                    tp2=tp2,
+                    has_tp_open=has_tp_open,
                     created_at=now_utc
                 )
-                uow.db.add(sig_rec)
+                uow.db.add(signal_rec)
 
-            # 5. Record Audit Event
             uow.audit.log_event("MESSAGE_PARSED", {
                 "message_id": message_id,
-                "category": parse_result.category,
-                "issues_count": len(parse_result.validationIssues)
+                "category": category_val,
+                "is_executable": parse_result.isExecutable
             })
 
-            return result_dict, False
+            return parse_dict, False

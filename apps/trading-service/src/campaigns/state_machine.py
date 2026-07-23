@@ -25,3 +25,6 @@ class CampaignStateMachine:
             return True
         except InvalidStateTransitionError:
             return False
+
+def validate_state_transition(from_state: str, to_state: str) -> None:
+    CampaignStateMachine.validate_transition(from_state, to_state)

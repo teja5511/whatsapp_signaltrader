@@ -1,3 +1,5 @@
+import json
+from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Dict, Any, Tuple, Optional
 from sqlalchemy.orm import Session
@@ -25,20 +27,7 @@ class CommandAttachmentHandler:
         state_changed = False
         description = f"Attached command '{command_type}' to campaign '{campaign.campaign_code}'"
 
-        # 1. Store Command Record
-        cmd_id = f"cmd-{now_utc.timestamp()}"
-        import json
-        cmd_rec = CommandModel(
-            id=cmd_id,
-            campaign_id=campaign.id,
-            raw_message_id=raw_message_id,
-            command_type=command_type,
-            parameters_json=json.dumps(command_payload),
-            executed_at=now_utc
-        )
-        db.add(cmd_rec)
-
-        # 2. Apply Command Logic
+        # Apply Command Logic
         if command_type == "MODIFY_STOP_LOSS":
             if command_payload.get("value"):
                 new_sl = float(command_payload["value"])
@@ -50,7 +39,7 @@ class CommandAttachmentHandler:
             if command_payload.get("value"):
                 new_tp = float(command_payload["value"])
                 slot = command_payload.get("targetTpSlot")
-                
+
                 if slot == "TP1" or (campaign.tp1 is None and slot != "TP2"):
                     campaign.tp1 = new_tp
                 elif slot == "TP2" or campaign.tp2 is None:
@@ -59,44 +48,61 @@ class CommandAttachmentHandler:
                 campaign.version += 1
                 description = f"Updated TP targets for campaign '{campaign.campaign_code}'"
 
-                # Check if campaign was WAITING_FOR_TP and now has both TP1 and TP2
+                # Check if TP targets are now complete -> Transition WAITING_FOR_TP to AWAITING_CONFIRMATION
                 if campaign.current_state == STATE_WAITING_FOR_TP and campaign.tp1 is not None and campaign.tp2 is not None:
-                    prev_state = campaign.current_state
                     campaign.current_state = STATE_AWAITING_CONFIRMATION
                     state_changed = True
-
-                    # Add Transition Record
                     db.add(CampaignStateTransitionModel(
                         campaign_id=campaign.id,
-                        from_state=prev_state,
+                        from_state=STATE_WAITING_FOR_TP,
                         to_state=STATE_AWAITING_CONFIRMATION,
                         reason_code=REASON_SIGNAL_COMPLETE,
-                        reason="All Take Profit targets received; campaign awaiting user confirmation",
+                        reason="Delayed TP target received; signal is now complete",
                         trigger_type=TRIGGER_WHATSAPP_MESSAGE,
                         trigger_reference_id=raw_message_id,
                         transitioned_at=now_utc
                     ))
 
         elif command_type in ("CLOSE_CAMPAIGN", "CANCEL_SIGNAL"):
-            if campaign.current_state in (STATE_WAITING_FOR_TP, STATE_AWAITING_CONFIRMATION):
+            if campaign.current_state not in (STATE_CANCELLED, "CLOSED"):
                 prev_state = campaign.current_state
                 campaign.current_state = STATE_CANCELLED
                 campaign.version += 1
                 state_changed = True
-                reason_code = REASON_ADMIN_CLOSE_REQUESTED if command_type == "CLOSE_CAMPAIGN" else REASON_ADMIN_CANCELLED
-
                 db.add(CampaignStateTransitionModel(
                     campaign_id=campaign.id,
                     from_state=prev_state,
                     to_state=STATE_CANCELLED,
-                    reason_code=reason_code,
-                    reason=f"Campaign cancelled via explicit {command_type} command",
+                    reason_code=REASON_ADMIN_CLOSE_REQUESTED if command_type == "CLOSE_CAMPAIGN" else REASON_ADMIN_CANCELLED,
+                    reason=f"Admin command '{command_type}' cancelled active campaign",
                     trigger_type=TRIGGER_WHATSAPP_MESSAGE,
                     trigger_reference_id=raw_message_id,
                     transitioned_at=now_utc
                 ))
 
-        elif command_type == "ZONE_VALID":
-            description = f"Acknowledged Zone Valid command for active campaign '{campaign.campaign_code}'"
-
         return description, state_changed
+
+def handle_command_attachment(
+    db: Session,
+    campaign: CampaignModel,
+    raw_message_id: str,
+    command_payload: Dict[str, Any]
+) -> Tuple[CommandModel, Optional[CampaignStateTransitionModel]]:
+    cmd_type = command_payload.get("commandType", "UNKNOWN")
+    CommandAttachmentHandler.process_command(
+        db=db,
+        campaign=campaign,
+        raw_message_id=raw_message_id,
+        command_type=cmd_type,
+        command_payload=command_payload
+    )
+    now_utc = datetime.now(timezone.utc)
+    cmd_rec = CommandModel(
+        id=str(uuid4()),
+        campaign_id=campaign.id,
+        raw_message_id=raw_message_id,
+        command_type=cmd_type,
+        parameters_json=json.dumps(command_payload),
+        executed_at=now_utc
+    )
+    return cmd_rec, None

@@ -21,7 +21,7 @@ class SettingsRepository:
             settings_dict[r.key] = r.value
 
         entry_count = int(settings_dict.get("entry_count", 5))
-        lot_per_entry = Decimal(settings_dict.get("lot_per_entry", "0.10"))
+        lot_per_entry = Decimal(settings_dict.get("lot_per_entry", "0.30"))
         max_exposure_lots = Decimal(settings_dict.get("max_exposure_lots", "2.00"))
         execution_mode = settings_dict.get("execution_mode", "CONFIRMATION")
         target_group_jid = settings_dict.get("target_group_jid")

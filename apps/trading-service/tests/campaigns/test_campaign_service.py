@@ -23,7 +23,7 @@ def test_full_campaign_lifecycle_and_confirmation():
     c_dict, is_dup = camp_service.create_campaign_from_message("msg-sig-1")
     assert is_dup is False
     assert c_dict["current_state"] == "AWAITING_CONFIRMATION"
-    assert c_dict["requested_total_lots"] == 0.50
+    assert c_dict["requested_total_lots"] == 1.50
 
     # 2. Approve Campaign
     app_dict = camp_service.approve_campaign(c_dict["id"], expected_version=1)

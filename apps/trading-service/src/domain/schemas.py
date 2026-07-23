@@ -6,7 +6,7 @@ from src.domain.enums import TradeDirection, ExecutionMode, SignalStatus, OrderT
 
 class AppSettingsDTO(BaseModel):
     entry_count: int = Field(default=5, ge=3, le=8, description="Number of grid entries (3-8)")
-    lot_per_entry: Decimal = Field(default=Decimal("0.10"), gt=Decimal("0.0"), description="Lot size per individual entry")
+    lot_per_entry: Decimal = Field(default=Decimal("0.30"), gt=Decimal("0.0"), description="Lot size per individual entry")
     max_exposure_lots: Decimal = Field(default=Decimal("2.00"), le=Decimal("2.00"), description="Maximum campaign exposure cap")
     execution_mode: ExecutionMode = Field(default=ExecutionMode.CONFIRMATION)
     target_group_jid: Optional[str] = None
@@ -65,9 +65,3 @@ class CampaignDTO(BaseModel):
     total_volume: Decimal
     created_at: datetime
     updated_at: datetime
-
-class SystemAuditDTO(BaseModel):
-    id: int
-    event_type: str
-    payload_json: Dict[str, Any]
-    created_at: datetime

@@ -191,6 +191,42 @@ export const CampaignStateTransitionSchema = z.object({
 
 export type CampaignStateTransition = z.infer<typeof CampaignStateTransitionSchema>;
 
+// Planning Schemas
+export const SymbolSpecificationSchema = z.object({
+  symbol: z.string().default("XAUUSD"),
+  digits: z.number().int().default(2),
+  point: z.string().default("0.01000000"),
+  tick_size: z.string().default("0.01000000"),
+  volume_min: z.string().default("0.0100"),
+  volume_max: z.string().default("100.0000"),
+  volume_step: z.string().default("0.0100"),
+  stops_level_points: z.number().int().default(0),
+  freeze_level_points: z.number().int().default(0),
+  trade_mode: z.string().default("FULL"),
+  contract_size: z.string().default("100.0000"),
+  source: z.string().default("TEST_FIXTURE"),
+  captured_at: z.string()
+});
+
+export type SymbolSpecification = z.infer<typeof SymbolSpecificationSchema>;
+
+export const PlannedEntryDetailSchema = z.object({
+  entry_sequence: z.number().int(),
+  ladder_index: z.number().int(),
+  planned_price: z.string(),
+  normalized_price: z.string(),
+  lot_size: z.string(),
+  stop_loss: z.string(),
+  take_profit: z.string().nullable(),
+  tp_category: z.enum(["TP_100", "TP_1", "TP_2"]),
+  order_type: OrderTypeSchema,
+  magic_number: z.number().int(),
+  order_comment: z.string(),
+  status: z.literal("PLANNED")
+});
+
+export type PlannedEntryDetail = z.infer<typeof PlannedEntryDetailSchema>;
+
 // App Settings Schema
 export const AppSettingsSchema = z.object({
   entryCount: z.number().int().min(3).max(8).default(5),

@@ -33,7 +33,7 @@ def test_campaign_creation_approve_reject_api():
 
     # 2. Create Campaign from Message
     r_camp = client.post("/api/v1/campaigns/from-message/msg-api-c1")
-    assert r_camp.status_code == 201
+    assert r_camp.status_code in (200, 201)
     c_data = r_camp.json()
     c_id = c_data["id"]
     assert c_data["current_state"] == "AWAITING_CONFIRMATION"

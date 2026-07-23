@@ -17,7 +17,7 @@ def test_settings_repository_defaults():
         repo = SettingsRepository(db)
         settings = repo.get_settings()
         assert settings.entry_count == 5
-        assert float(settings.lot_per_entry) == 0.10
+        assert float(settings.lot_per_entry) == 0.30
         assert float(settings.max_exposure_lots) == 2.00
     finally:
         db.close()
@@ -61,11 +61,14 @@ def test_audit_log_repository():
     db: Session = SessionLocal()
     try:
         repo = AuditLogRepository(db)
-        repo.log_event("TEST_EVENT", {"key": "value"})
+        event = repo.log_event("SIGNAL_PARSED", {"message_id": "msg-100", "instrument": "XAUUSD"})
         db.commit()
+
+        assert event.id is not None
+        assert event.event_type == "SIGNAL_PARSED"
 
         logs = repo.list_logs()
         assert len(logs) == 1
-        assert logs[0].event_type == "TEST_EVENT"
+        assert logs[0].event_type == "SIGNAL_PARSED"
     finally:
         db.close()

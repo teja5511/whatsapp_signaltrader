@@ -1,3 +1,5 @@
+from typing import Optional
+
 class CampaignError(Exception):
     """Base domain exception for campaign operations."""
     pass
@@ -21,7 +23,12 @@ class DuplicateCampaignError(CampaignError):
         self.existing_campaign_id = existing_campaign_id
 
 class ConcurrencyConflictError(CampaignError):
-    def __init__(self, campaign_id: str, expected_version: int):
-        super().__init__(f"Optimistic concurrency conflict on campaign '{campaign_id}' (expected version {expected_version}).")
+    def __init__(self, campaign_id: str, expected_version: int, current_version: Optional[int] = None):
+        msg = f"Optimistic concurrency conflict on campaign '{campaign_id}' (expected version {expected_version}"
+        if current_version is not None:
+            msg += f", current version {current_version}"
+        msg += ")."
+        super().__init__(msg)
         self.campaign_id = campaign_id
         self.expected_version = expected_version
+        self.current_version = current_version

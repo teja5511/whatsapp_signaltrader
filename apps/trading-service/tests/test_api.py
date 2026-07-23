@@ -12,8 +12,9 @@ def test_get_settings_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["entry_count"] == 5
-    assert float(data["lot_per_entry"]) == 0.10
+    assert float(data["lot_per_entry"]) == 0.30
     assert float(data["max_exposure_lots"]) == 2.00
+    assert data["trading_enabled"] is False
 
 def test_get_campaigns_endpoint():
     response = client.get("/api/v1/campaigns")
