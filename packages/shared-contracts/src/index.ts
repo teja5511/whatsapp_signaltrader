@@ -148,6 +148,49 @@ export const ParserResultSchema = z.object({
 
 export type ParserResult = z.infer<typeof ParserResultSchema>;
 
+// Campaign Schemas
+export const CampaignDetailSchema = z.object({
+  id: z.string(),
+  campaign_code: z.string(),
+  signal_id: z.string(),
+  parent_campaign_id: z.string().nullable(),
+  reentry_sequence: z.number().int(),
+  magic_number: z.number().int(),
+  current_state: SignalStatusSchema,
+  execution_mode: ExecutionModeSchema,
+  entry_count: z.number().int(),
+  lot_per_entry: z.number(),
+  total_volume: z.number(),
+  maximum_total_lots: z.number(),
+  requested_total_lots: z.number(),
+  current_stop_loss: z.number().nullable(),
+  tp1: z.number().nullable(),
+  tp2: z.number().nullable(),
+  has_tp_open: z.boolean(),
+  version: z.number().int(),
+  trading_enabled: z.boolean().default(false),
+  execution_performed: z.boolean().default(false),
+  created_at: z.string(),
+  updated_at: z.string()
+});
+
+export type CampaignDetail = z.infer<typeof CampaignDetailSchema>;
+
+export const CampaignStateTransitionSchema = z.object({
+  id: z.number().int(),
+  campaign_id: z.string(),
+  from_state: SignalStatusSchema,
+  to_state: SignalStatusSchema,
+  reason_code: z.string(),
+  reason: z.string(),
+  trigger_type: z.string(),
+  trigger_reference_id: z.string().nullable(),
+  correlation_id: z.string().nullable(),
+  transitioned_at: z.string()
+});
+
+export type CampaignStateTransition = z.infer<typeof CampaignStateTransitionSchema>;
+
 // App Settings Schema
 export const AppSettingsSchema = z.object({
   entryCount: z.number().int().min(3).max(8).default(5),

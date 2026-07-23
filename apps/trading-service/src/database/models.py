@@ -11,6 +11,7 @@ def utc_now() -> datetime:
 
 class AppSettingModel(Base):
     __tablename__ = "app_settings"
+    __table_args__ = {'extend_existing': True}
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -18,6 +19,7 @@ class AppSettingModel(Base):
 
 class WhatsAppMessageModel(Base):
     __tablename__ = "whatsapp_messages"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     group_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
@@ -31,17 +33,21 @@ class WhatsAppMessageModel(Base):
 
 class DuplicateKeyModel(Base):
     __tablename__ = "duplicate_keys"
+    __table_args__ = {'extend_existing': True}
 
     dedup_key: Mapped[str] = mapped_column(String(128), primary_key=True)
-    message_id: Mapped[str] = mapped_column(String(128), ForeignKey("whatsapp_messages.id"), nullable=False)
+    duplicate_type: Mapped[str] = mapped_column(String(32), nullable=False, default="EXACT")
+    message_id: Mapped[Optional[str]] = mapped_column(String(128), ForeignKey("whatsapp_messages.id"), nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 class ParsedMessageModel(Base):
     __tablename__ = "parsed_messages"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     raw_message_id: Mapped[str] = mapped_column(String(128), ForeignKey("whatsapp_messages.id"), unique=True, nullable=False)
-    message_type: Mapped[str] = mapped_column(String(32), nullable=False)  # SIGNAL or COMMAND
+    message_type: Mapped[str] = mapped_column(String(32), nullable=False)  # NEW_SIGNAL, FOLLOW_UP_COMMAND, etc.
     parsed_json: Mapped[str] = mapped_column(Text, nullable=False)
     parsed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -50,6 +56,7 @@ class ParsedMessageModel(Base):
 
 class SignalModel(Base):
     __tablename__ = "signals"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     parsed_message_id: Mapped[str] = mapped_column(String(36), ForeignKey("parsed_messages.id"), nullable=False)
@@ -68,16 +75,27 @@ class SignalModel(Base):
 
 class CampaignModel(Base):
     __tablename__ = "campaigns"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.id"), unique=True, nullable=False)
+    campaign_code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.id"), index=True, nullable=False)
+    parent_campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=True)
+    reentry_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     magic_number: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
     current_state: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     execution_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
     lot_per_entry: Mapped[float] = mapped_column(Float, nullable=False)
     total_volume: Mapped[float] = mapped_column(Float, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    maximum_total_lots: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
+    requested_total_lots: Mapped[float] = mapped_column(Float, nullable=False, default=1.5)
+    current_stop_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tp1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tp2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    has_tp_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
     signal: Mapped["SignalModel"] = relationship("SignalModel", back_populates="campaign")
@@ -88,18 +106,24 @@ class CampaignModel(Base):
 
 class CampaignStateTransitionModel(Base):
     __tablename__ = "campaign_state_transitions"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
     from_state: Mapped[str] = mapped_column(String(32), nullable=False)
     to_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False, default="SIGNAL_RECEIVED")
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger_type: Mapped[str] = mapped_column(String(32), nullable=False, default="WHATSAPP_MESSAGE")
+    trigger_reference_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    correlation_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     transitioned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     campaign: Mapped["CampaignModel"] = relationship("CampaignModel", back_populates="transitions")
 
 class PlannedEntryModel(Base):
     __tablename__ = "planned_entries"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
@@ -116,6 +140,7 @@ class PlannedEntryModel(Base):
 
 class PendingOrderModel(Base):
     __tablename__ = "pending_orders"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=False)
@@ -132,6 +157,7 @@ class PendingOrderModel(Base):
 
 class PositionModel(Base):
     __tablename__ = "positions"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=False)
@@ -150,16 +176,18 @@ class PositionModel(Base):
 
 class CommandModel(Base):
     __tablename__ = "commands"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=False)
-    raw_message_id: Mapped[str] = mapped_column(String(128), ForeignKey("whatsapp_messages.id"), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
+    raw_message_id: Mapped[str] = mapped_column(String(128), ForeignKey("whatsapp_messages.id"), index=True, nullable=False)
     command_type: Mapped[str] = mapped_column(String(32), nullable=False)
     parameters_json: Mapped[str] = mapped_column(Text, nullable=False)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 class ConfirmationModel(Base):
     __tablename__ = "confirmations"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=False)
@@ -168,6 +196,7 @@ class ConfirmationModel(Base):
 
 class SystemAuditEventModel(Base):
     __tablename__ = "system_audit_events"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
@@ -176,6 +205,7 @@ class SystemAuditEventModel(Base):
 
 class SystemErrorModel(Base):
     __tablename__ = "system_errors"
+    __table_args__ = {'extend_existing': True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     error_code: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
