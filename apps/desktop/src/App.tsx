@@ -1,39 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import { DESIGN_TOKENS } from '@whatsapp-bot/ui';
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { DashboardLayout } from "./layouts/DashboardLayout";
+import { OverviewPage } from "./pages/overview/OverviewPage";
+import { WhatsAppPage } from "./pages/whatsapp/WhatsAppPage";
+import { Mt5Page } from "./pages/mt5/Mt5Page";
+import { CampaignsPage } from "./pages/campaigns/CampaignsPage";
+import { CampaignDetailPage } from "./pages/campaigns/CampaignDetailPage";
+import { ConfirmationsPage } from "./pages/confirmations/ConfirmationsPage";
+import { OrdersPositionsPage } from "./pages/positions/OrdersPositionsPage";
+import { EventsPage } from "./pages/events/EventsPage";
+import { SettingsPage } from "./pages/settings/SettingsPage";
+import { AboutPage } from "./pages/about/AboutPage";
 
-export default function App() {
-  const [status, setStatus] = useState<any>(null);
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 3000,
+    },
+  },
+});
 
-  useEffect(() => {
-    fetch('http://localhost:8000/api/v1/status')
-      .then((res) => res.json())
-      .then((data) => setStatus(data))
-      .catch(() => setStatus(null));
-  }, []);
-
+export const App: React.FC = () => {
   return (
-    <div style={{ padding: '2rem', backgroundColor: DESIGN_TOKENS.colors.backgroundDark, minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid #334155', paddingBottom: '1rem', marginBottom: '2rem' }}>
-        <h1 style={{ margin: 0, color: DESIGN_TOKENS.colors.primary }}>WhatsApp MT5 XAUUSD Bot</h1>
-        <p style={{ margin: '0.5rem 0 0 0', color: '#94a3b8' }}>Desktop Dashboard Shell — Phase 2 Scaffolding</p>
-      </header>
-
-      <main>
-        <div style={{ backgroundColor: DESIGN_TOKENS.colors.cardDark, padding: '1.5rem', borderRadius: '8px', border: '1px solid #334155' }}>
-          <h2>System Status</h2>
-          {status ? (
-            <div>
-              <p><strong>Instrument:</strong> {status.instrument}</p>
-              <p><strong>Account Mode:</strong> <span style={{ color: DESIGN_TOKENS.colors.success }}>{status.account_mode}</span></p>
-              <p><strong>Execution Mode:</strong> {status.execution_mode}</p>
-              <p><strong>Default Entries:</strong> {status.default_entry_count}</p>
-              <p><strong>Max Exposure Cap:</strong> {status.max_exposure_lots} lots</p>
-            </div>
-          ) : (
-            <p style={{ color: DESIGN_TOKENS.colors.warning }}>Connecting to Python Trading Core (http://localhost:8000)...</p>
-          )}
-        </div>
-      </main>
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<DashboardLayout />}>
+            <Route index element={<OverviewPage />} />
+            <Route path="whatsapp" element={<WhatsAppPage />} />
+            <Route path="mt5" element={<Mt5Page />} />
+            <Route path="campaigns" element={<CampaignsPage />} />
+            <Route path="campaigns/:id" element={<CampaignDetailPage />} />
+            <Route path="confirmations" element={<ConfirmationsPage />} />
+            <Route path="positions" element={<OrdersPositionsPage />} />
+            <Route path="events" element={<EventsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="about" element={<AboutPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
-}
+};
+
+export default App;

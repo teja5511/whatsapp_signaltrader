@@ -800,9 +800,103 @@ def close_campaign(campaign_id: str, auth: None = Depends(verify_local_token)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-@app.post("/api/v1/mt5/emergency/close-all-xauusd")
-def emergency_close_all(req: Mt5EmergencyCloseRequestDTO, auth: None = Depends(verify_local_token)):
+@app.get("/api/v1/confirmations")
+def list_confirmations():
+    db = SessionLocal()
     try:
-        return mt5_service.emergency_close_all_xauusd(confirmation_phrase=req.confirmation_phrase, scope=req.scope)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        from src.database.models import CampaignModel, AmbiguousCommandConfirmationModel
+        campaigns = db.query(CampaignModel).filter(CampaignModel.state == "AWAITING_CONFIRMATION").all()
+        ambiguous = db.query(AmbiguousCommandConfirmationModel).filter(AmbiguousCommandConfirmationModel.status == "PENDING").all()
+        return {
+            "campaign_confirmations": [
+                {
+                    "campaign_id": c.id,
+                    "campaign_code": c.campaign_code,
+                    "direction": c.direction,
+                    "zone_low": float(c.zone_low),
+                    "zone_high": float(c.zone_high),
+                    "stop_loss": float(c.stop_loss),
+                    "version": c.version,
+                    "created_at": c.created_at.isoformat()
+                }
+                for c in campaigns
+            ],
+            "ambiguous_command_confirmations": [
+                {
+                    "id": a.id,
+                    "command_id": a.command_id,
+                    "campaign_id": a.campaign_id,
+                    "original_text": a.original_text,
+                    "suggested_action": a.suggested_action,
+                    "match_type": a.match_type,
+                    "candidate_count": a.candidate_count,
+                    "status": a.status,
+                    "expires_at": a.expires_at.isoformat() if a.expires_at else None,
+                    "created_at": a.created_at.isoformat()
+                }
+                for a in ambiguous
+            ]
+        }
+    finally:
+        db.close()
+
+class AmbiguousResolveRequest(BaseModel):
+    action: str
+
+@app.post("/api/v1/confirmations/ambiguous/{confirmation_id}/resolve")
+def resolve_ambiguous_command(confirmation_id: str, req: AmbiguousResolveRequest, auth: None = Depends(verify_local_token)):
+    allowed_actions = {"APPROVE_CLOSE", "APPROVE_CANCEL", "HOLD", "SKIP", "REJECT"}
+    if req.action not in allowed_actions:
+        raise HTTPException(status_code=422, detail=f"Invalid action '{req.action}'. Allowed: {allowed_actions}")
+
+    db = SessionLocal()
+    try:
+        from src.database.models import AmbiguousCommandConfirmationModel
+        a = db.get(AmbiguousCommandConfirmationModel, confirmation_id)
+        if not a:
+            raise HTTPException(status_code=404, detail="Ambiguous command confirmation not found.")
+        a.status = "RESOLVED"
+        a.resolution_action = req.action
+        a.resolved_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"status": "resolved", "confirmation_id": confirmation_id, "action": req.action}
+    finally:
+        db.close()
+
+@app.get("/api/v1/mt5/orders")
+def get_mt5_orders():
+    orders = mt5_service.adapter.orders_get()
+    return [o.model_dump(mode="json") for o in orders]
+
+@app.get("/api/v1/mt5/positions")
+def get_mt5_positions():
+    positions = mt5_service.adapter.positions_get()
+    return [p.model_dump(mode="json") for p in positions]
+
+@app.get("/api/v1/mt5/history")
+def get_mt5_history(limit: int = Query(50, ge=1, le=500)):
+    history = mt5_service.adapter.history_orders_get()
+    return [h.model_dump(mode="json") for h in history[:limit]]
+
+@app.get("/api/v1/mt5/execution/batches")
+def list_execution_batches(limit: int = Query(50, ge=1, le=500)):
+    db = SessionLocal()
+    try:
+        batches = db.query(MT5ExecutionBatchModel).order_by(MT5ExecutionBatchModel.created_at.desc()).limit(limit).all()
+        return [
+            {
+                "id": b.id,
+                "campaign_id": b.campaign_id,
+                "campaign_version": b.campaign_version,
+                "planning_fingerprint": b.planning_fingerprint,
+                "status": b.status,
+                "total_jobs": b.total_jobs,
+                "completed_jobs": b.completed_jobs,
+                "failed_jobs": b.failed_jobs,
+                "created_at": b.created_at.isoformat()
+            }
+            for b in batches
+        ]
+    finally:
+        db.close()
+
