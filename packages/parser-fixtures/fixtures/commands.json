@@ -1,0 +1,27 @@
+[
+  {
+    "id": "cmd-001",
+    "raw_text": "Move SL to 4138 for added safety",
+    "classification": "EXECUTABLE_COMMAND",
+    "extracted": {
+      "action": "MODIFY_SL",
+      "target_price": 4138.0
+    }
+  },
+  {
+    "id": "cmd-002",
+    "raw_text": "Exit this trade on your comfort",
+    "classification": "AMBIGUOUS_COMMAND",
+    "extracted": {
+      "action": "SUGGEST_EXIT"
+    }
+  },
+  {
+    "id": "cmd-003",
+    "raw_text": "50+ Pips",
+    "classification": "INFORMATIONAL_MESSAGE",
+    "extracted": {
+      "milestone": "50_PIPS"
+    }
+  }
+]

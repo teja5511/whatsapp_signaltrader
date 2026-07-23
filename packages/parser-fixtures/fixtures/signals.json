@@ -1,0 +1,32 @@
+[
+  {
+    "id": "sig-001",
+    "name": "Standard Gold Sell Range with multi-TP",
+    "raw_text": "Gold Sell\n4120-4128\n\nsl - 4136\n\ntp - 4112\ntp - 4104\ntp - Open",
+    "expected": {
+      "symbol": "XAUUSD",
+      "direction": "SELL",
+      "entry_min": 4120.0,
+      "entry_max": 4128.0,
+      "stop_loss": 4136.0,
+      "tp1": 4112.0,
+      "tp2": 4104.0,
+      "has_tp_open": true
+    }
+  },
+  {
+    "id": "sig-002",
+    "name": "Single Entry Gold Buy with Explicit TPs",
+    "raw_text": "XAUUSD BUY\n3990-3998\nSL: 3975\nTP1: 4010\nTP2: 4020",
+    "expected": {
+      "symbol": "XAUUSD",
+      "direction": "BUY",
+      "entry_min": 3990.0,
+      "entry_max": 3998.0,
+      "stop_loss": 3975.0,
+      "tp1": 4010.0,
+      "tp2": 4020.0,
+      "has_tp_open": false
+    }
+  }
+]

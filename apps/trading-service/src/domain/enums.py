@@ -1,0 +1,45 @@
+from enum import Enum
+
+class TradeDirection(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+class ExecutionMode(str, Enum):
+    AUTO = "AUTO"
+    CONFIRMATION = "CONFIRMATION"
+
+class SignalStatus(str, Enum):
+    RECEIVED = "RECEIVED"
+    PARSED = "PARSED"
+    INVALID = "INVALID"
+    WAITING_FOR_TP = "WAITING_FOR_TP"
+    AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
+    PLANNED = "PLANNED"
+    PLACING_ORDERS = "PLACING_ORDERS"
+    PARTIALLY_PLACED = "PARTIALLY_PLACED"
+    PENDING = "PENDING"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    OPEN = "OPEN"
+    MANAGING = "MANAGING"
+    CLOSING = "CLOSING"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
+    FAILED = "FAILED"
+
+class OrderType(str, Enum):
+    BUY_LIMIT = "BUY_LIMIT"
+    SELL_LIMIT = "SELL_LIMIT"
+    BUY_STOP = "BUY_STOP"
+    SELL_STOP = "SELL_STOP"
+
+class MessageType(str, Enum):
+    SIGNAL = "SIGNAL"
+    COMMAND = "COMMAND"
+
+class CommandType(str, Enum):
+    MODIFY_SL = "MODIFY_SL"
+    CLOSE_PARTIAL = "CLOSE_PARTIAL"
+    CLOSE_ALL = "CLOSE_ALL"
+    CANCEL_PENDING = "CANCEL_PENDING"
+    SUGGEST_EXIT = "SUGGEST_EXIT"

@@ -1,0 +1,20 @@
+{
+  "name": "@whatsapp-bot/whatsapp-worker",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "lint": "tsc --noEmit",
+    "test": "echo \"WhatsApp worker test placeholder\""
+  },
+  "dependencies": {
+    "@whatsapp-bot/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}
