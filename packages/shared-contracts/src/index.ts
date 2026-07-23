@@ -238,3 +238,54 @@ export const AppSettingsSchema = z.object({
 });
 
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
+
+// MT5 Adapter & Worker Schemas
+export const Mt5AdapterModeSchema = z.enum(["fake", "dry_run", "real"]);
+export type Mt5AdapterMode = z.infer<typeof Mt5AdapterModeSchema>;
+
+export const Mt5HealthStateSchema = z.enum([
+  "DISABLED", "NOT_INSTALLED", "NOT_INITIALIZED", "INITIALIZING",
+  "CONNECTED", "READY", "DEGRADED", "BLOCKED_LIVE_ACCOUNT",
+  "BLOCKED_NON_HEDGING", "BLOCKED_ACCOUNT_NOT_ALLOWED",
+  "BLOCKED_SERVER_NOT_ALLOWED", "BLOCKED_SYMBOL_NOT_FOUND",
+  "BLOCKED_SYMBOL_AMBIGUOUS", "TRADING_NOT_ALLOWED", "ERROR", "SHUTTING_DOWN"
+]);
+export type Mt5HealthState = z.infer<typeof Mt5HealthStateSchema>;
+
+export const Mt5StatusSchema = z.object({
+  adapter_mode: Mt5AdapterModeSchema.default("fake"),
+  health_state: Mt5HealthStateSchema.default("NOT_INITIALIZED"),
+  execution_enabled: z.boolean().default(false),
+  demo_only: z.literal(true).default(true),
+  live_execution_enabled: z.literal(false).default(false),
+  trading_enabled: z.boolean().default(false),
+  account_connected: z.boolean().default(false),
+  account_environment: z.enum(["DEMO", "CONTEST", "REAL", "UNKNOWN"]).default("DEMO"),
+  margin_mode: z.enum(["HEDGING", "NETTING", "EXCHANGE", "UNKNOWN"]).default("HEDGING"),
+  resolved_symbol: z.string().nullable().default("XAUUSD")
+});
+export type Mt5Status = z.infer<typeof Mt5StatusSchema>;
+
+export const Mt5ExecutionPreflightResultSchema = z.object({
+  campaign_id: z.string(),
+  is_ready: z.boolean(),
+  checks_passed: z.array(z.string()),
+  blocking_reasons: z.array(z.string())
+});
+export type Mt5ExecutionPreflightResult = z.infer<typeof Mt5ExecutionPreflightResultSchema>;
+
+export const Mt5CampaignExecutionRequestSchema = z.object({
+  expected_version: z.number().int(),
+  planning_fingerprint: z.string(),
+  explicit_user_confirm: z.literal(true).default(true)
+});
+export type Mt5CampaignExecutionRequest = z.infer<typeof Mt5CampaignExecutionRequestSchema>;
+
+export const Mt5CampaignExecutionResultSchema = z.object({
+  campaign_id: z.string(),
+  batch_id: z.string(),
+  status: z.string(),
+  jobs_count: z.number().int(),
+  message: z.string()
+});
+export type Mt5CampaignExecutionResult = z.infer<typeof Mt5CampaignExecutionResultSchema>;

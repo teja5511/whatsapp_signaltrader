@@ -212,3 +212,174 @@ class SystemErrorModel(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     traceback_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+# MT5 Execution & Adapter Persistence Models
+
+class MT5ExecutionBatchModel(Base):
+    __tablename__ = "mt5_execution_batches"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
+    campaign_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    planning_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED")
+    total_jobs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_jobs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_jobs: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class MT5ExecutionJobModel(Base):
+    __tablename__ = "mt5_execution_jobs"
+    __table_args__ = (
+        UniqueConstraint('idempotency_key', name='uq_mt5_jobs_idempotency_key'),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    batch_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("mt5_execution_batches.id"), index=True, nullable=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=True)
+    planned_entry_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("planned_entries.id"), index=True, nullable=True)
+    operation_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="QUEUED")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    result_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class MT5AccountSnapshotModel(Base):
+    __tablename__ = "mt5_account_snapshots"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    login: Mapped[int] = mapped_column(Integer, nullable=False)
+    login_masked: Mapped[str] = mapped_column(String(64), nullable=False)
+    server: Mapped[str] = mapped_column(String(128), nullable=False)
+    company: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment_kind: Mapped[str] = mapped_column(String(32), nullable=False)  # DEMO, CONTEST, REAL, UNKNOWN
+    margin_mode: Mapped[str] = mapped_column(String(32), nullable=False)       # HEDGING, NETTING, EXCHANGE, UNKNOWN
+    currency: Mapped[str] = mapped_column(String(16), nullable=False, default="USD")
+    leverage: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    balance: Mapped[float] = mapped_column(Float, nullable=False)
+    equity: Mapped[float] = mapped_column(Float, nullable=False)
+    margin: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    margin_free: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    trade_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    trade_expert: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+class MT5SymbolSnapshotModel(Base):
+    __tablename__ = "mt5_symbol_snapshots"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    canonical_symbol: Mapped[str] = mapped_column(String(16), nullable=False, default="XAUUSD")
+    broker_symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    digits: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    point: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
+    tick_size: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
+    volume_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
+    volume_max: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
+    volume_step: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
+    stops_level_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    freeze_level_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trade_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="FULL")
+    contract_size: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+class MT5OrderRecordModel(Base):
+    __tablename__ = "mt5_orders"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=True)
+    planned_entry_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("planned_entries.id"), index=True, nullable=True)
+    ticket: Mapped[int] = mapped_column(Integer, unique=True, index=True, nullable=False)
+    magic_number: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    volume: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    comment: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="PLACED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class MT5PositionRecordModel(Base):
+    __tablename__ = "mt5_positions"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=True)
+    planned_entry_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("planned_entries.id"), index=True, nullable=True)
+    ticket: Mapped[int] = mapped_column(Integer, unique=True, index=True, nullable=False)
+    magic_number: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    position_type: Mapped[str] = mapped_column(String(16), nullable=False)  # BUY or SELL
+    volume: Mapped[float] = mapped_column(Float, nullable=False)
+    price_open: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    comment: Mapped[str] = mapped_column(String(128), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class MT5OrderCheckModel(Base):
+    __tablename__ = "mt5_order_checks"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("mt5_execution_jobs.id"), nullable=True)
+    request_json: Mapped[str] = mapped_column(Text, nullable=False)
+    retcode: Mapped[int] = mapped_column(Integer, nullable=False)
+    retcode_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    comment: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    margin: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    margin_free: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+class MT5ExecutionAttemptModel(Base):
+    __tablename__ = "mt5_execution_attempts"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("mt5_execution_jobs.id"), index=True, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    order_check_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("mt5_order_checks.id"), nullable=True)
+    retcode: Mapped[int] = mapped_column(Integer, nullable=False)
+    retcode_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    deal_ticket: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    order_ticket: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    is_success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+class MT5SyncEventModel(Base):
+    __tablename__ = "mt5_sync_events"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True)
+    sync_type: Mapped[str] = mapped_column(String(32), nullable=False, default="MANUAL")
+    orders_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    positions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

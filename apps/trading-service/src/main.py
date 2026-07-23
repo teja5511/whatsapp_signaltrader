@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, status, Response
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, status, Response
 from pydantic import BaseModel, Field
+import os
 import json
+import secrets
 from typing import Optional, List, Dict, Any
 from src.database.engine import engine, Base, SessionLocal
 from src.database.repository import SettingsRepository, AuditLogRepository
-from src.database.models import WhatsAppMessageModel
+from src.database.models import WhatsAppMessageModel, MT5ExecutionJobModel, MT5ExecutionBatchModel
 from src.parser.service import MessageParsingService
 from src.campaigns.service import CampaignService
 from src.campaigns.errors import CampaignNotFoundError, ConcurrencyConflictError, InvalidStateTransitionError
@@ -12,6 +14,16 @@ from src.planning.service import PlanningService
 from src.planning.constants import PLANNER_VERSION, RISK_ENGINE_VERSION
 from src.planning.policies import get_production_default_policies, get_test_fixture_policies
 from src.planning.errors import RiskValidationError, ReplanNotAllowedError
+from src.mt5.execution_service import MT5ExecutionService
+from src.mt5.execution_worker import MT5ExecutionWorker
+from src.mt5.order_service import MT5OrderService
+from src.mt5.position_service import MT5PositionService
+from src.mt5.constants import MT5_ADAPTER_VERSION, EXECUTION_WORKER_VERSION
+from src.mt5.contracts import (
+    Mt5CampaignExecutionRequestDTO, Mt5OrderModificationRequestDTO,
+    Mt5PositionModificationRequestDTO, Mt5PositionCloseRequestDTO,
+    Mt5EmergencyCloseRequestDTO
+)
 
 # Initialize Database Schema
 Base.metadata.create_all(bind=engine)
@@ -19,12 +31,25 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="WhatsApp-to-MT5 XAUUSD Trading Service",
     version="1.0.0",
-    description="Local FastAPI service executing WhatsApp signal parsing, campaign state machine, and entry ladder planning for MT5."
+    description="Local FastAPI service executing WhatsApp signal parsing, campaign state machine, entry planning, and MT5 demo execution worker."
 )
 
 parse_service = MessageParsingService(session_factory=SessionLocal)
 campaign_service = CampaignService(session_factory=SessionLocal)
 planning_service = PlanningService(session_factory=SessionLocal)
+mt5_service = MT5ExecutionService(session_factory=SessionLocal)
+mt5_worker = MT5ExecutionWorker(adapter=mt5_service.adapter, session_factory=SessionLocal)
+order_service = MT5OrderService(adapter=mt5_service.adapter, session_factory=SessionLocal)
+position_service = MT5PositionService(adapter=mt5_service.adapter, session_factory=SessionLocal)
+
+LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN", "dev-local-secret-token")
+
+def verify_local_token(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Bearer authorization header.")
+    token = authorization.split("Bearer ", 1)[1].strip()
+    if not secrets.compare_digest(token, LOCAL_API_TOKEN):
+        raise HTTPException(status_code=401, detail="Unauthorized local API token.")
 
 # Health & System Endpoints
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -34,7 +59,7 @@ def get_health():
         "service": "trading-service",
         "version": "1.0.0",
         "trading_enabled": False,
-        "mt5_connected": False,
+        "mt5_connected": mt5_service.adapter.is_initialized(),
         "whatsapp_connected": False
     }
 
@@ -318,3 +343,196 @@ def get_planned_entries(campaign_id: str):
         return res["planned_entries"]
     except CampaignNotFoundError:
         raise HTTPException(status_code=404, detail="Campaign not found.")
+
+# MT5 Endpoints
+@app.get("/api/v1/mt5/version")
+def get_mt5_version():
+    return {
+        "mt5_adapter_version": MT5_ADAPTER_VERSION,
+        "execution_worker_version": EXECUTION_WORKER_VERSION
+    }
+
+@app.get("/api/v1/mt5/status")
+def get_mt5_status():
+    return mt5_service.adapter.get_status().model_dump(mode="json")
+
+@app.get("/api/v1/mt5/terminal")
+def get_mt5_terminal_info():
+    return mt5_service.adapter.terminal_info().model_dump(mode="json")
+
+@app.get("/api/v1/mt5/account")
+def get_mt5_account_info():
+    return mt5_service.adapter.account_info().model_dump(mode="json")
+
+@app.get("/api/v1/mt5/symbol")
+def get_mt5_symbol_resolution():
+    return mt5_service.adapter.resolve_symbol().model_dump(mode="json")
+
+@app.get("/api/v1/mt5/symbol/specification")
+def get_mt5_symbol_spec():
+    return mt5_service.adapter.symbol_specification().model_dump(mode="json")
+
+@app.post("/api/v1/mt5/initialize")
+def initialize_mt5(auth: None = Depends(verify_local_token)):
+    ok = mt5_service.adapter.initialize()
+    return {"status": "initialized" if ok else "failed", "health_state": mt5_service.adapter.health_state}
+
+@app.post("/api/v1/mt5/shutdown")
+def shutdown_mt5(auth: None = Depends(verify_local_token)):
+    mt5_service.adapter.shutdown()
+    return {"status": "shutdown"}
+
+@app.post("/api/v1/mt5/synchronize")
+def synchronize_mt5(campaign_id: Optional[str] = None, auth: None = Depends(verify_local_token)):
+    if campaign_id:
+        return mt5_service.synchronize_campaign(campaign_id)
+    return {"status": "synced", "orders_count": len(mt5_service.adapter.orders_get()), "positions_count": len(mt5_service.adapter.positions_get())}
+
+@app.post("/api/v1/mt5/execution/preflight/{campaign_id}")
+def execution_preflight(campaign_id: str):
+    return mt5_service.run_preflight(campaign_id).model_dump(mode="json")
+
+@app.post("/api/v1/mt5/execution/campaigns/{campaign_id}", status_code=status.HTTP_202_ACCEPTED)
+def execute_campaign(
+    campaign_id: str,
+    req: Mt5CampaignExecutionRequestDTO,
+    auth: None = Depends(verify_local_token)
+):
+    try:
+        res, is_dup = mt5_service.queue_campaign_execution(
+            campaign_id=campaign_id,
+            expected_version=req.expected_version,
+            planning_fingerprint=req.planning_fingerprint,
+            explicit_user_confirm=req.explicit_user_confirm
+        )
+        return res.model_dump(mode="json")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.get("/api/v1/mt5/execution/jobs")
+def list_execution_jobs():
+    db = SessionLocal()
+    try:
+        jobs = db.query(MT5ExecutionJobModel).order_by(MT5ExecutionJobModel.created_at.desc()).all()
+        return [
+            {
+                "id": j.id,
+                "batch_id": j.batch_id,
+                "campaign_id": j.campaign_id,
+                "planned_entry_id": j.planned_entry_id,
+                "operation_type": j.operation_type,
+                "status": j.status,
+                "created_at": j.created_at.isoformat()
+            }
+            for j in jobs
+        ]
+    finally:
+        db.close()
+
+@app.get("/api/v1/mt5/execution/jobs/{job_id}")
+def get_execution_job(job_id: str):
+    db = SessionLocal()
+    try:
+        j = db.get(MT5ExecutionJobModel, job_id)
+        if not j:
+            raise HTTPException(status_code=404, detail="Execution job not found.")
+        return {
+            "id": j.id,
+            "batch_id": j.batch_id,
+            "campaign_id": j.campaign_id,
+            "planned_entry_id": j.planned_entry_id,
+            "operation_type": j.operation_type,
+            "idempotency_key": j.idempotency_key,
+            "status": j.status,
+            "attempt_count": j.attempt_count,
+            "result_json": json.loads(j.result_json) if j.result_json else None,
+            "last_error_code": j.last_error_code,
+            "last_error_message": j.last_error_message,
+            "created_at": j.created_at.isoformat()
+        }
+    finally:
+        db.close()
+
+@app.get("/api/v1/mt5/execution/batches/{batch_id}")
+def get_execution_batch(batch_id: str):
+    db = SessionLocal()
+    try:
+        b = db.get(MT5ExecutionBatchModel, batch_id)
+        if not b:
+            raise HTTPException(status_code=404, detail="Execution batch not found.")
+        return {
+            "id": b.id,
+            "campaign_id": b.campaign_id,
+            "campaign_version": b.campaign_version,
+            "planning_fingerprint": b.planning_fingerprint,
+            "status": b.status,
+            "total_jobs": b.total_jobs,
+            "completed_jobs": b.completed_jobs,
+            "failed_jobs": b.failed_jobs,
+            "created_at": b.created_at.isoformat()
+        }
+    finally:
+        db.close()
+
+@app.post("/api/v1/mt5/execution/jobs/{job_id}/cancel")
+def cancel_execution_job(job_id: str, auth: None = Depends(verify_local_token)):
+    db = SessionLocal()
+    try:
+        j = db.get(MT5ExecutionJobModel, job_id)
+        if not j:
+            raise HTTPException(status_code=404, detail="Job not found.")
+        j.status = "CANCELLED"
+        db.commit()
+        return {"status": "cancelled", "job_id": job_id}
+    finally:
+        db.close()
+
+@app.post("/api/v1/mt5/orders/{order_ticket}/modify")
+def modify_order(order_ticket: int, req: Mt5OrderModificationRequestDTO, auth: None = Depends(verify_local_token)):
+    try:
+        return order_service.modify_order(order_ticket, price=req.price, stop_loss=req.stop_loss, take_profit=req.take_profit)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.delete("/api/v1/mt5/orders/{order_ticket}")
+def delete_order(order_ticket: int, auth: None = Depends(verify_local_token)):
+    try:
+        return order_service.delete_order(order_ticket)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/api/v1/mt5/campaigns/{campaign_id}/cancel-pending")
+def cancel_campaign_pending(campaign_id: str, auth: None = Depends(verify_local_token)):
+    try:
+        return order_service.cancel_campaign_pending_orders(campaign_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/api/v1/mt5/positions/{position_ticket}/modify-sltp")
+def modify_position_sltp(position_ticket: int, req: Mt5PositionModificationRequestDTO, auth: None = Depends(verify_local_token)):
+    try:
+        return position_service.modify_position_sltp(position_ticket, stop_loss=req.stop_loss, take_profit=req.take_profit)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/api/v1/mt5/positions/{position_ticket}/close")
+def close_position(position_ticket: int, req: Optional[Mt5PositionCloseRequestDTO] = None, auth: None = Depends(verify_local_token)):
+    try:
+        vol = req.volume if req else None
+        return position_service.close_position(position_ticket, volume=vol)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/api/v1/mt5/campaigns/{campaign_id}/close")
+def close_campaign(campaign_id: str, auth: None = Depends(verify_local_token)):
+    try:
+        return position_service.close_campaign_positions(campaign_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/api/v1/mt5/emergency/close-all-xauusd")
+def emergency_close_all(req: Mt5EmergencyCloseRequestDTO, auth: None = Depends(verify_local_token)):
+    try:
+        return mt5_service.emergency_close_all_xauusd(confirmation_phrase=req.confirmation_phrase, scope=req.scope)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))

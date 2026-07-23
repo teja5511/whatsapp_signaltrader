@@ -1,6 +1,6 @@
 # WhatsApp to MT5 XAUUSD Trading Bot
 
-[![Phase](https://img.shields.io/badge/Phase-6%20of%2012%20Planning%20Complete-blue)](#current-phase)
+[![Phase](https://img.shields.io/badge/Phase-7%20of%2012%20MT5%20Adapter%20Complete-blue)](#current-phase)
 [![Target OS](https://img.shields.io/badge/OS-Windows%2010%2F11-0078D6)](#architecture-summary)
 [![Instrument](https://img.shields.io/badge/Instrument-XAUUSD-FFD700)](#confirmed-restrictions)
 
@@ -17,9 +17,9 @@ A production-oriented, high-reliability Windows desktop application that convert
 
 ## Current Status
 
-- **Completed Phases**: **Prompts 1–6 of 12 Completed**
-- **Next Phase**: **Prompt 7 — MT5 Adapter and Demo Execution Worker**
-- **Implementation Status**: Entry Ladder Calculations, TP Allocation (100-pip, TP1, TP2), Risk Engine Validation, SHA-256 Planning Fingerprinting, Campaign State Machine, Duplicate Protection, Deterministic Parser, SQLite Persistence, and Shared Domain Contracts implemented. Zero live trading, MT5 execution, or WhatsApp connection code present.
+- **Completed Phases**: **Prompts 1–7 of 12 Completed**
+- **Next Phase**: **Prompt 8 — OpenWA WhatsApp Worker**
+- **Implementation Status**: MT5 Adapter (Fake, Dry Run, Real Demo), Single-Writer Execution Queue, Pre-Send Order Check, Order/Position Services, Emergency Close-All, Local Bearer Token API Authentication, Entry Ladder Planning, Risk Engine Validation, Campaign State Machine, Duplicate Protection, Deterministic Parser, SQLite Persistence, and Shared Domain Contracts implemented. Zero live trading, MT5 live account execution, or WhatsApp connection code present.
 
 ---
 
@@ -28,11 +28,12 @@ A production-oriented, high-reliability Windows desktop application that convert
 - 📋 [REQUIREMENTS.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/REQUIREMENTS.md)
 - 🏗️ [ARCHITECTURE.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/ARCHITECTURE.md)
 - 📈 [TRADING_RULES.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/TRADING_RULES.md)
-- 📐 [ENTRY_PLANNER.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/ENTRY_PLANNER.md)
-- 🪜 [ENTRY_LADDER.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/ENTRY_LADDER.md)
-- 🎯 [TP_ALLOCATION.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/TP_ALLOCATION.md)
-- 🛡️ [RISK_ENGINE.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/RISK_ENGINE.md)
-- 📜 [PLANNING_POLICIES.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/PLANNING_POLICIES.md)
-- 📊 [SYMBOL_SPECIFICATION.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/SYMBOL_SPECIFICATION.md)
-- 🌐 [PLANNING_API.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/PLANNING_API.md)
-- 📝 [PHASE_6_REPORT.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/PHASE_6_REPORT.md)
+- 🔌 [MT5_ADAPTER.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_ADAPTER.md)
+- 🛡️ [MT5_DEMO_SAFETY.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_DEMO_SAFETY.md)
+- 🔍 [MT5_SYMBOL_RESOLUTION.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_SYMBOL_RESOLUTION.md)
+- ⚙️ [MT5_EXECUTION_WORKER.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_EXECUTION_WORKER.md)
+- 📝 [MT5_ORDER_LIFECYCLE.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_ORDER_LIFECYCLE.md)
+- 📊 [MT5_POSITION_OPERATIONS.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_POSITION_OPERATIONS.md)
+- 🌐 [MT5_API.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_API.md)
+- 🧪 [MT5_SMOKE_TESTS.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/MT5_SMOKE_TESTS.md)
+- 📑 [PHASE_7_REPORT.md](file:///c:/Users/Pavan%20Teja/projects/whatsapp_trading%20bot/docs/PHASE_7_REPORT.md)
