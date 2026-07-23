@@ -138,3 +138,11 @@ class MessageParsingService:
             })
 
             return parse_dict, False
+
+    def get_parsed_message_by_raw_id(self, raw_message_id: str) -> Tuple[Dict[str, Any], bool]:
+        with UnitOfWork(session_factory=self.session_factory) as uow:
+            msg = uow.db.get(WhatsAppMessageModel, raw_message_id)
+            if msg and msg.parsed_message:
+                return json.loads(msg.parsed_message.parsed_json), True
+            raise ValueError(f"Raw message '{raw_message_id}' not found or not parsed.")
+

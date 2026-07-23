@@ -4,11 +4,7 @@ from src.parser.service import MessageParsingService
 from src.campaigns.service import CampaignService
 from src.campaigns.errors import ConcurrencyConflictError, InvalidStateTransitionError
 
-@pytest.fixture(autouse=True)
-def setup_db():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
+
 
 def test_full_campaign_lifecycle_and_confirmation():
     parse_service = MessageParsingService(session_factory=SessionLocal)

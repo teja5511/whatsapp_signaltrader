@@ -32,6 +32,12 @@ class MT5ExecutionWorker:
         self.worker_id = worker_id
         self.is_running = False
 
+    def process_next_batch(self, batch_id: Optional[str] = None) -> int:
+        count = 0
+        while self.process_next_job():
+            count += 1
+        return count
+
     def process_next_job(self) -> bool:
         """
         Pulls and processes one queued trade execution job safely.

@@ -8,7 +8,14 @@
     "validate": "powershell -ExecutionPolicy Bypass -File ./scripts/validate.ps1",
     "test": "pnpm --recursive run test",
     "build": "pnpm --recursive run build",
-    "lint": "pnpm --recursive run lint"
+    "lint": "pnpm --recursive run lint",
+    "orchestration:test": "pytest apps/trading-service/tests/orchestration",
+    "orchestration:contracts": "pnpm --filter @whatsapp-bot/shared-contracts build",
+    "orchestration:benchmark": "pytest -s apps/trading-service/tests/orchestration/test_orchestration_benchmarks.py",
+    "orchestration:migrations": "python apps/trading-service/alembic/run.py upgrade head",
+    "events:test": "pytest apps/trading-service/tests/events",
+    "events:benchmark": "pytest -s apps/trading-service/tests/orchestration/test_orchestration_benchmarks.py",
+    "e2e:fake": "pytest apps/trading-service/tests/test_e2e_fake.py"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

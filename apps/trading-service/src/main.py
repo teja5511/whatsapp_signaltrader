@@ -1,12 +1,18 @@
-from fastapi import FastAPI, HTTPException, Depends, Header, Query, status, Response
-from pydantic import BaseModel, Field
 import os
 import json
 import secrets
+import asyncio
+from datetime import datetime, timezone
+from uuid import uuid4
 from typing import Optional, List, Dict, Any
+
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, status, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
 from src.database.engine import engine, Base, SessionLocal
 from src.database.repository import SettingsRepository, AuditLogRepository
-from src.database.models import WhatsAppMessageModel, MT5ExecutionJobModel, MT5ExecutionBatchModel
+from src.database.models import WhatsAppMessageModel, MT5ExecutionJobModel, MT5ExecutionBatchModel, DomainEventModel
 from src.parser.service import MessageParsingService
 from src.campaigns.service import CampaignService
 from src.campaigns.errors import CampaignNotFoundError, ConcurrencyConflictError, InvalidStateTransitionError
@@ -25,15 +31,27 @@ from src.mt5.contracts import (
     Mt5EmergencyCloseRequestDTO
 )
 
+# Phase 9 Orchestration & Event Imports
+from src.orchestration import (
+    OrchestrationService, OrchestrationCoordinator, SystemStatusAggregator,
+    ControlPolicyManager, SystemStatusDTO, ControlStateDTO,
+    ORCHESTRATOR_VERSION, EVENT_CONTRACT_VERSION, OUTBOX_VERSION, SYSTEM_STATUS_CONTRACT_VERSION,
+    EmergencyStopActiveError, InvalidControlPhraseError
+)
+from src.events import (
+    DomainEventDTO, OutboxPublisher, OutboxDispatcher, global_outbox_dispatcher, redact_event_payload
+)
+
 # Initialize Database Schema
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="WhatsApp-to-MT5 XAUUSD Trading Service",
     version="1.0.0",
-    description="Local FastAPI service executing WhatsApp signal parsing, campaign state machine, entry planning, and MT5 demo execution worker."
+    description="Central FastAPI orchestration layer executing WhatsApp signal ingestion, parser, campaign state machine, entry planner, demo MT5 execution worker, and real-time events."
 )
 
+# Initialize Services
 parse_service = MessageParsingService(session_factory=SessionLocal)
 campaign_service = CampaignService(session_factory=SessionLocal)
 planning_service = PlanningService(session_factory=SessionLocal)
@@ -42,7 +60,13 @@ mt5_worker = MT5ExecutionWorker(adapter=mt5_service.adapter, session_factory=Ses
 order_service = MT5OrderService(adapter=mt5_service.adapter, session_factory=SessionLocal)
 position_service = MT5PositionService(adapter=mt5_service.adapter, session_factory=SessionLocal)
 
+orchestration_service = OrchestrationService(session_factory=SessionLocal)
+status_aggregator = SystemStatusAggregator(session_factory=SessionLocal, mt5_service=mt5_service)
+control_manager = ControlPolicyManager(session_factory=SessionLocal, mt5_service=mt5_service)
+coordinator = OrchestrationCoordinator(session_factory=SessionLocal, mt5_service=mt5_service)
+
 LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN", "dev-local-secret-token")
+ACTIVE_TICKETS: Dict[str, datetime] = {}
 
 def verify_local_token(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -51,7 +75,7 @@ def verify_local_token(authorization: Optional[str] = Header(None)):
     if not secrets.compare_digest(token, LOCAL_API_TOKEN):
         raise HTTPException(status_code=401, detail="Unauthorized local API token.")
 
-# Health & System Endpoints
+# Health, Status & Versions Endpoints
 @app.get("/health", status_code=status.HTTP_200_OK)
 def get_health():
     return {
@@ -108,7 +132,248 @@ def get_app_settings():
     finally:
         db.close()
 
-# Parser Endpoints
+@app.get("/api/v1/system/status", response_model=SystemStatusDTO)
+def get_system_status():
+    return status_aggregator.aggregate_status()
+
+@app.get("/api/v1/system/health")
+def get_system_health():
+    st = status_aggregator.aggregate_status()
+    return {"status": st.overall_state, "healthy": st.overall_state == "HEALTHY"}
+
+@app.get("/api/v1/system/readiness")
+def get_system_readiness():
+    st = status_aggregator.aggregate_status()
+    ready = (st.overall_state in ["HEALTHY", "DEGRADED"]) and (st.automation_state != "EMERGENCY_STOPPED")
+    return {"ready": ready, "automation_state": st.automation_state}
+
+@app.get("/api/v1/system/versions")
+def get_system_versions():
+    return {
+        "orchestrator_version": ORCHESTRATOR_VERSION,
+        "event_contract_version": EVENT_CONTRACT_VERSION,
+        "outbox_version": OUTBOX_VERSION,
+        "system_status_contract_version": SYSTEM_STATUS_CONTRACT_VERSION,
+        "parser_version": "1.0.0",
+        "planner_version": PLANNER_VERSION,
+        "mt5_adapter_version": MT5_ADAPTER_VERSION,
+        "execution_worker_version": EXECUTION_WORKER_VERSION
+    }
+
+# Control Endpoints
+class ControlPhraseRequest(BaseModel):
+    confirmation_phrase: str
+
+@app.get("/api/v1/control/state")
+def get_control_state():
+    db = SessionLocal()
+    try:
+        from src.database.models import ControlStateModel
+        c = db.get(ControlStateModel, 1)
+        if not c:
+            return ControlStateDTO().model_dump()
+        return {
+            "automation_state": c.automation_state,
+            "default_execution_mode": c.default_execution_mode,
+            "trading_enabled": c.trading_enabled,
+            "mt5_execution_enabled": c.mt5_execution_enabled,
+            "orchestrator_enabled": c.orchestrator_enabled,
+            "event_dispatcher_enabled": c.event_dispatcher_enabled
+        }
+    finally:
+        db.close()
+
+@app.post("/api/v1/control/automation/pause")
+def pause_automation(auth: None = Depends(verify_local_token)):
+    return control_manager.pause_automation()
+
+@app.post("/api/v1/control/automation/resume")
+def resume_automation(auth: None = Depends(verify_local_token)):
+    try:
+        return control_manager.resume_automation()
+    except EmergencyStopActiveError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+@app.post("/api/v1/control/emergency-stop")
+def trigger_emergency_stop(auth: None = Depends(verify_local_token)):
+    return control_manager.trigger_emergency_stop()
+
+@app.post("/api/v1/control/emergency-stop/reset")
+def reset_emergency_stop(req: ControlPhraseRequest, auth: None = Depends(verify_local_token)):
+    try:
+        return control_manager.reset_emergency_stop(req.confirmation_phrase)
+    except InvalidControlPhraseError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+@app.post("/api/v1/control/trading/enable-demo")
+def enable_demo_trading(req: ControlPhraseRequest, auth: None = Depends(verify_local_token)):
+    try:
+        return control_manager.enable_demo_trading(req.confirmation_phrase)
+    except InvalidControlPhraseError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+@app.post("/api/v1/control/trading/disable")
+def disable_trading(auth: None = Depends(verify_local_token)):
+    return control_manager.disable_trading()
+
+# Orchestration Endpoints
+@app.get("/api/v1/orchestration/runs")
+def list_orchestration_runs(limit: int = Query(50, ge=1, le=1000)):
+    return orchestration_service.list_runs(limit=limit)
+
+@app.get("/api/v1/orchestration/runs/{run_id}")
+def get_orchestration_run_detail(run_id: str):
+    res = orchestration_service.get_run_detail(run_id)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"Orchestration run '{run_id}' not found.")
+    return res
+
+@app.post("/api/v1/orchestration/campaigns/{campaign_id}/approve")
+def approve_campaign_orchestration(campaign_id: str, expected_version: int = Query(1), auth: None = Depends(verify_local_token)):
+    try:
+        return coordinator.approve_campaign_and_orchestrate(campaign_id, expected_version=expected_version)
+    except CampaignNotFoundError:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    except ConcurrencyConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+# Events, WebSockets & SSE Endpoints
+@app.post("/api/v1/events/ticket")
+def create_event_ticket(auth: None = Depends(verify_local_token)):
+    ticket = str(uuid4())
+    now_utc = datetime.now(timezone.utc)
+    ACTIVE_TICKETS[ticket] = now_utc
+    return {"ticket": ticket, "expires_in_seconds": 60}
+
+def verify_ticket_or_token(auth_token: Optional[str] = None, ticket: Optional[str] = None) -> bool:
+    if auth_token and secrets.compare_digest(auth_token, LOCAL_API_TOKEN):
+        return True
+    if ticket and ticket in ACTIVE_TICKETS:
+        issued_at = ACTIVE_TICKETS.pop(ticket)
+        if (datetime.now(timezone.utc) - issued_at).total_seconds() <= 60:
+            return True
+    return False
+
+@app.get("/api/v1/events")
+def list_domain_events(
+    after_sequence: Optional[int] = None,
+    event_type: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=1000)
+):
+    db = SessionLocal()
+    try:
+        query = db.query(DomainEventModel)
+        if after_sequence is not None:
+            query = query.filter(DomainEventModel.sequence > after_sequence)
+        if event_type:
+            query = query.filter(DomainEventModel.event_type == event_type)
+        if campaign_id:
+            query = query.filter(DomainEventModel.campaign_id == campaign_id)
+
+        events = query.order_by(DomainEventModel.sequence.asc()).limit(limit).all()
+        return [
+            {
+                "event_contract_version": "1.0.0",
+                "event_id": e.event_id,
+                "sequence": e.sequence,
+                "event_type": e.event_type,
+                "event_version": e.event_version,
+                "aggregate_type": e.aggregate_type,
+                "aggregate_id": e.aggregate_id,
+                "campaign_id": e.campaign_id,
+                "correlation_id": e.correlation_id,
+                "occurred_at": e.occurred_at.isoformat(),
+                "payload": json.loads(e.payload_json)
+            }
+            for e in events
+        ]
+    finally:
+        db.close()
+
+@app.get("/api/v1/events/latest-sequence")
+def get_latest_event_sequence():
+    db = SessionLocal()
+    try:
+        latest = db.query(DomainEventModel).order_by(DomainEventModel.sequence.desc()).first()
+        return {"latest_sequence": latest.sequence if latest and latest.sequence else 0}
+    finally:
+        db.close()
+
+@app.get("/api/v1/events/sse")
+async def sse_event_stream(
+    ticket: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None)
+):
+    token = authorization.split("Bearer ", 1)[1].strip() if authorization and authorization.startswith("Bearer ") else None
+    if not verify_ticket_or_token(auth_token=token, ticket=ticket):
+        raise HTTPException(status_code=401, detail="Unauthorized SSE access.")
+
+    async def event_generator():
+        last_seq = 0
+        while True:
+            db = SessionLocal()
+            try:
+                # Dispatch any pending outbox entries to generate domain events
+                global_outbox_dispatcher.process_pending_outbox(db)
+                events = db.query(DomainEventModel).filter(DomainEventModel.sequence > last_seq).order_by(DomainEventModel.sequence.asc()).all()
+                for e in events:
+                    last_seq = e.sequence
+                    data_json = json.dumps({
+                        "event_contract_version": "1.0.0",
+                        "event_id": e.event_id,
+                        "sequence": e.sequence,
+                        "event_type": e.event_type,
+                        "aggregate_type": e.aggregate_type,
+                        "aggregate_id": e.aggregate_id,
+                        "correlation_id": e.correlation_id,
+                        "occurred_at": e.occurred_at.isoformat(),
+                        "payload": json.loads(e.payload_json)
+                    })
+                    yield f"id: {e.sequence}\nevent: {e.event_type}\ndata: {data_json}\n\n"
+            finally:
+                db.close()
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.websocket("/api/v1/events/ws")
+async def websocket_event_stream(websocket: WebSocket, ticket: Optional[str] = Query(None)):
+    await websocket.accept()
+    if not verify_ticket_or_token(ticket=ticket):
+        await websocket.send_json({"error": "Unauthorized WebSocket token/ticket."})
+        await websocket.close(code=1008)
+        return
+
+    last_seq = 0
+    try:
+        while True:
+            db = SessionLocal()
+            try:
+                global_outbox_dispatcher.process_pending_outbox(db)
+                events = db.query(DomainEventModel).filter(DomainEventModel.sequence > last_seq).order_by(DomainEventModel.sequence.asc()).all()
+                for e in events:
+                    last_seq = e.sequence
+                    await websocket.send_json({
+                        "event_contract_version": "1.0.0",
+                        "event_id": e.event_id,
+                        "sequence": e.sequence,
+                        "event_type": e.event_type,
+                        "aggregate_type": e.aggregate_type,
+                        "aggregate_id": e.aggregate_id,
+                        "correlation_id": e.correlation_id,
+                        "occurred_at": e.occurred_at.isoformat(),
+                        "payload": json.loads(e.payload_json)
+                    })
+            finally:
+                db.close()
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        pass
+
+# Parser Endpoints (Preserving & Wiring Orchestration)
 class ParseRawMessageRequest(BaseModel):
     messageId: str = "preview-msg"
     groupId: str = "preview-group"
@@ -183,6 +448,7 @@ def parse_raw_text(req: ParseRawMessageRequest):
 
 @app.post("/api/v1/parser/messages", status_code=status.HTTP_201_CREATED)
 def parse_and_persist_message(req: ParseRawMessageRequest):
+    # 1. Parse and Persist Message
     parse_res, is_dup = parse_service.parse_and_persist(
         raw_text=req.text,
         message_id=req.messageId,
@@ -191,6 +457,10 @@ def parse_and_persist_message(req: ParseRawMessageRequest):
         quoted_message_id=req.quotedMessageId,
         is_reply=req.isReply
     )
+
+    # 2. Trigger Central Orchestration Coordinator
+    orch_res = coordinator.process_raw_message_id(req.messageId)
+
     category = parse_res.get("category")
     command = parse_res.get("command")
     signal = parse_res.get("signal")
@@ -201,7 +471,9 @@ def parse_and_persist_message(req: ParseRawMessageRequest):
         "command": command,
         "signal": signal,
         "is_duplicate": is_dup,
-        "parse_result": parse_res
+        "parse_result": parse_res,
+        "orchestration_run_id": orch_res.get("orchestration_run_id"),
+        "orchestration_status": orch_res.get("status")
     }
 
 # Campaign Endpoints
@@ -242,13 +514,11 @@ def get_campaign_commands(campaign_id: str):
 
 @app.post("/api/v1/campaigns/from-message/{raw_message_id}")
 def create_campaign_from_message(raw_message_id: str):
-    c_dict, is_dup = campaign_service.create_campaign_from_message(raw_message_id)
-    if is_dup:
-        return {"status": "duplicate", "campaign": c_dict}
+    c_dict, _ = campaign_service.create_campaign_from_message(raw_message_id)
     return c_dict
 
 class ActionRequest(BaseModel):
-    expected_version: int = 1
+    expected_version: int
 
 @app.post("/api/v1/campaigns/{campaign_id}/approve")
 def approve_campaign(campaign_id: str, req: ActionRequest):

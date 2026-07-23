@@ -1,15 +1,12 @@
 import { z } from "zod";
 
-// Enums
+// Shared Enums and Constants
 export enum TradeDirection {
   BUY = "BUY",
   SELL = "SELL"
 }
 
-export enum ExecutionMode {
-  AUTO = "AUTO",
-  CONFIRMATION = "CONFIRMATION"
-}
+export const TradeDirectionSchema = z.nativeEnum(TradeDirection);
 
 export enum SignalStatus {
   RECEIVED = "RECEIVED",
@@ -31,172 +28,84 @@ export enum SignalStatus {
   FAILED = "FAILED"
 }
 
+export const SignalStatusSchema = z.nativeEnum(SignalStatus);
+
+export enum ExecutionMode {
+  AUTO = "AUTO",
+  CONFIRMATION = "CONFIRMATION"
+}
+
+export const ExecutionModeSchema = z.nativeEnum(ExecutionMode);
+
 export enum OrderType {
   BUY_LIMIT = "BUY_LIMIT",
-  SELL_LIMIT = "SELL_LIMIT",
-  BUY_STOP = "BUY_STOP",
-  SELL_STOP = "SELL_STOP"
+  SELL_LIMIT = "SELL_LIMIT"
 }
 
-export enum ParserCategory {
-  NEW_SIGNAL = "NEW_SIGNAL",
-  FOLLOW_UP_COMMAND = "FOLLOW_UP_COMMAND",
-  INFORMATIONAL = "INFORMATIONAL",
-  AMBIGUOUS = "AMBIGUOUS",
-  INVALID = "INVALID",
-  UNSUPPORTED = "UNSUPPORTED"
-}
-
-export enum ExecutionEligibility {
-  NEVER = "NEVER",
-  REQUIRES_CONFIRMATION = "REQUIRES_CONFIRMATION",
-  ELIGIBLE_AFTER_CAMPAIGN_MATCH = "ELIGIBLE_AFTER_CAMPAIGN_MATCH",
-  ELIGIBLE_AFTER_VALIDATION = "ELIGIBLE_AFTER_VALIDATION"
-}
-
-// Zod Schemas
-export const TradeDirectionSchema = z.nativeEnum(TradeDirection);
-export const ExecutionModeSchema = z.nativeEnum(ExecutionMode);
-export const SignalStatusSchema = z.nativeEnum(SignalStatus);
 export const OrderTypeSchema = z.nativeEnum(OrderType);
-export const ParserCategorySchema = z.nativeEnum(ParserCategory);
-export const ExecutionEligibilitySchema = z.nativeEnum(ExecutionEligibility);
 
-// Parser Input Schema
-export const ParserInputSchema = z.object({
-  contractVersion: z.string().default("1.0.0"),
-  parserVersion: z.string().default("1.0.0"),
-  messageId: z.string(),
-  groupId: z.string(),
-  senderId: z.string(),
-  text: z.string(),
-  messageTimestamp: z.string().datetime(),
-  quotedMessageId: z.string().nullable().default(null),
-  isReply: z.boolean().default(false)
-});
-
-export type ParserInput = z.infer<typeof ParserInputSchema>;
-
-// Parser Validation Issue Schema
-export const ParserValidationIssueSchema = z.object({
-  code: z.string(),
-  severity: z.enum(["INFO", "WARNING", "ERROR"]),
-  field: z.string().nullable().default(null),
-  message: z.string(),
-  sourceLine: z.number().int().nullable().default(null)
-});
-
-export type ParserValidationIssue = z.infer<typeof ParserValidationIssueSchema>;
-
-// Parsed Signal Payload
-export const ParsedSignalPayloadSchema = z.object({
-  instrument: z.literal("XAUUSD"),
+// Domain Schemas
+export const SignalSchema = z.object({
+  id: z.string().uuid(),
+  instrument: z.string().default("XAUUSD"),
   direction: TradeDirectionSchema,
-  orderIntent: z.enum(["LIMIT", "UNSPECIFIED"]),
-  zoneLow: z.string(),
-  zoneHigh: z.string(),
-  stopLoss: z.string().nullable().default(null),
-  tp1: z.string().nullable().default(null),
-  tp2: z.string().nullable().default(null),
-  tpOpenPresent: z.boolean().default(false),
-  completeness: z.enum(["COMPLETE", "INCOMPLETE"])
+  entryRangeLow: z.number().positive(),
+  entryRangeHigh: z.number().positive(),
+  stopLoss: z.number().positive().optional(),
+  takeProfits: z.array(z.number().positive()),
+  rawMessage: z.string(),
+  createdAt: z.date()
 });
 
-export type ParsedSignalPayload = z.infer<typeof ParsedSignalPayloadSchema>;
+export type Signal = z.infer<typeof SignalSchema>;
 
-// Parsed Command Payload
-export const ParsedCommandPayloadSchema = z.object({
-  commandType: z.enum([
-    "MODIFY_STOP_LOSS", "CLOSE_CAMPAIGN", "CANCEL_SIGNAL",
-    "ZONE_VALID", "REENTRY", "ADD_TAKE_PROFIT"
-  ]),
-  classification: z.enum(["EXPLICIT", "AMBIGUOUS"]),
-  value: z.string().nullable().default(null),
-  valueKind: z.enum(["PRICE", "PIPS", "SLOT", "NONE"]).default("NONE"),
-  hardStop: z.boolean().default(false),
-  targetTpSlot: z.enum(["TP1", "TP2", "UNSPECIFIED"]).nullable().default(null)
+export const CampaignSchema = z.object({
+  id: z.string().uuid(),
+  campaignCode: z.string(),
+  signalId: z.string().uuid(),
+  parentCampaignId: z.string().uuid().optional(),
+  reentrySequence: z.number().int().default(0),
+  magicNumber: z.number().int(),
+  currentState: SignalStatusSchema,
+  executionMode: ExecutionModeSchema,
+  entryCount: z.number().int().default(5),
+  lotPerEntry: z.number().positive().default(0.30),
+  totalVolume: z.number().positive().default(1.50),
+  maximumTotalLots: z.number().positive().default(2.00),
+  requestedTotalLots: z.number().positive().default(1.50),
+  currentStopLoss: z.number().positive().optional(),
+  tp1: z.number().positive().optional(),
+  tp2: z.number().positive().optional(),
+  hasTpOpen: z.boolean().default(false),
+  version: z.number().int().default(1),
+  tradingEnabled: z.boolean().default(false),
+  executionPerformed: z.boolean().default(false),
+  createdAt: z.date(),
+  updatedAt: z.date()
 });
 
-export type ParsedCommandPayload = z.infer<typeof ParsedCommandPayloadSchema>;
+export type Campaign = z.infer<typeof CampaignSchema>;
 
-// Complete Parser Result Schema
-export const ParserResultSchema = z.object({
-  contractVersion: z.string().default("1.0.0"),
-  parserVersion: z.string().default("1.0.0"),
-  category: ParserCategorySchema,
-  isExecutable: z.boolean().default(false),
-  requiresConfirmation: z.boolean().default(true),
-  executionEligibility: ExecutionEligibilitySchema,
-  originalText: z.string(),
-  normalizedText: z.string(),
-  signal: ParsedSignalPayloadSchema.nullable().default(null),
-  command: ParsedCommandPayloadSchema.nullable().default(null),
-  commands: z.array(ParsedCommandPayloadSchema).default([]),
-  informational: z.record(z.unknown()).nullable().default(null),
-  ambiguous: z.record(z.unknown()).nullable().default(null),
-  validationIssues: z.array(ParserValidationIssueSchema).default([]),
-  warnings: z.array(z.string()).default([]),
-  campaignMatchStrategyHint: z.enum(["QUOTED_MESSAGE", "LATEST_COMPATIBLE", "NONE"]).default("NONE"),
-  sourceMetadata: z.object({
-    messageId: z.string(),
-    groupId: z.string(),
-    senderId: z.string(),
-    quotedMessageId: z.string().nullable().default(null),
-    isReply: z.boolean().default(false)
-  })
+export const WhatsAppMessageEnvelopeSchema = z.object({
+  messageId: z.string().min(1),
+  groupId: z.string().min(1),
+  senderId: z.string().min(1),
+  rawContent: z.string().min(1).max(10000),
+  receivedAt: z.string(),
+  idempotencyKey: z.string().min(1),
+  workerId: z.string().default("openwa-worker-01"),
+  adapterMode: z.enum(["fake", "real"]).default("fake")
 });
 
-export type ParserResult = z.infer<typeof ParserResultSchema>;
+export type WhatsAppMessageEnvelope = z.infer<typeof WhatsAppMessageEnvelopeSchema>;
 
-// Campaign Schemas
-export const CampaignDetailSchema = z.object({
-  id: z.string(),
-  campaign_code: z.string(),
-  signal_id: z.string(),
-  parent_campaign_id: z.string().nullable(),
-  reentry_sequence: z.number().int(),
-  magic_number: z.number().int(),
-  current_state: SignalStatusSchema,
-  execution_mode: ExecutionModeSchema,
-  entry_count: z.number().int(),
-  lot_per_entry: z.number(),
-  total_volume: z.number(),
-  maximum_total_lots: z.number(),
-  requested_total_lots: z.number(),
-  current_stop_loss: z.number().nullable(),
-  tp1: z.number().nullable(),
-  tp2: z.number().nullable(),
-  has_tp_open: z.boolean(),
-  version: z.number().int(),
-  trading_enabled: z.boolean().default(false),
-  execution_performed: z.boolean().default(false),
-  created_at: z.string(),
-  updated_at: z.string()
-});
-
-export type CampaignDetail = z.infer<typeof CampaignDetailSchema>;
-
-export const CampaignStateTransitionSchema = z.object({
-  id: z.number().int(),
-  campaign_id: z.string(),
-  from_state: SignalStatusSchema,
-  to_state: SignalStatusSchema,
-  reason_code: z.string(),
-  reason: z.string(),
-  trigger_type: z.string(),
-  trigger_reference_id: z.string().nullable(),
-  correlation_id: z.string().nullable(),
-  transitioned_at: z.string()
-});
-
-export type CampaignStateTransition = z.infer<typeof CampaignStateTransitionSchema>;
-
-// Planning Schemas
+// Symbol Specification Schema
 export const SymbolSpecificationSchema = z.object({
-  symbol: z.string().default("XAUUSD"),
+  canonical_symbol: z.string().default("XAUUSD"),
+  broker_symbol: z.string().default("XAUUSD"),
   digits: z.number().int().default(2),
-  point: z.string().default("0.01000000"),
-  tick_size: z.string().default("0.01000000"),
+  point: z.string().default("0.0100"),
+  tick_size: z.string().default("0.0100"),
   volume_min: z.string().default("0.0100"),
   volume_max: z.string().default("100.0000"),
   volume_step: z.string().default("0.0100"),
@@ -285,7 +194,79 @@ export const Mt5CampaignExecutionResultSchema = z.object({
   campaign_id: z.string(),
   batch_id: z.string(),
   status: z.string(),
-  jobs_count: z.number().int(),
-  message: z.string()
+  queued_jobs_count: z.number().int()
 });
 export type Mt5CampaignExecutionResult = z.infer<typeof Mt5CampaignExecutionResultSchema>;
+
+// Phase 9 Orchestration, Control & Event Schemas
+export const AutomationStateSchema = z.enum(["PAUSED", "RUNNING", "EMERGENCY_STOPPED"]);
+export type AutomationState = z.infer<typeof AutomationStateSchema>;
+
+export const SystemStatusSchema = z.object({
+  system_status_contract_version: z.string().default("1.0.0"),
+  overall_state: z.enum(["HEALTHY", "DEGRADED", "BLOCKED", "ERROR", "STARTING", "STOPPED"]).default("HEALTHY"),
+  automation_state: AutomationStateSchema.default("PAUSED"),
+  default_execution_mode: ExecutionModeSchema.default(ExecutionMode.CONFIRMATION),
+  trading_enabled: z.boolean().default(false),
+  mt5_execution_enabled: z.boolean().default(false),
+  mt5_account_environment: z.string().default("DEMO"),
+  mt5_margin_mode: z.string().default("HEDGING"),
+  whatsapp_worker_state: z.string().default("READY"),
+  whatsapp_spool_pending: z.number().int().default(0),
+  active_campaign_count: z.number().int().default(0),
+  awaiting_confirmation_count: z.number().int().default(0),
+  waiting_for_tp_count: z.number().int().default(0),
+  queued_mt5_jobs: z.number().int().default(0),
+  outbox_pending: z.number().int().default(0),
+  latest_event_sequence: z.number().int().default(0),
+  updated_at: z.string()
+});
+export type SystemStatus = z.infer<typeof SystemStatusSchema>;
+
+export const ControlStateSchema = z.object({
+  automation_state: AutomationStateSchema.default("PAUSED"),
+  default_execution_mode: ExecutionModeSchema.default(ExecutionMode.CONFIRMATION),
+  trading_enabled: z.boolean().default(false),
+  mt5_execution_enabled: z.boolean().default(false),
+  orchestrator_enabled: z.boolean().default(true),
+  event_dispatcher_enabled: z.boolean().default(true)
+});
+export type ControlState = z.infer<typeof ControlStateSchema>;
+
+export const OrchestrationRunSchema = z.object({
+  id: z.string(),
+  orchestrator_version: z.string().default("1.0.0"),
+  source_type: z.string(),
+  source_id: z.string(),
+  correlation_id: z.string(),
+  causation_id: z.string().nullable().optional(),
+  campaign_id: z.string().nullable().optional(),
+  command_id: z.string().nullable().optional(),
+  status: z.string(),
+  current_step: z.string(),
+  input_payload: z.record(z.any()),
+  output_payload: z.record(z.any()).nullable().optional(),
+  error_code: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  started_at: z.string(),
+  completed_at: z.string().nullable().optional()
+});
+export type OrchestrationRun = z.infer<typeof OrchestrationRunSchema>;
+
+export const DomainEventSchema = z.object({
+  event_contract_version: z.string().default("1.0.0"),
+  event_id: z.string(),
+  sequence: z.number().int(),
+  event_type: z.string(),
+  event_version: z.string().default("1.0"),
+  aggregate_type: z.string(),
+  aggregate_id: z.string(),
+  campaign_id: z.string().nullable().optional(),
+  correlation_id: z.string(),
+  causation_id: z.string().nullable().optional(),
+  actor_type: z.string().default("SYSTEM"),
+  actor_id: z.string().nullable().optional(),
+  occurred_at: z.string(),
+  payload: z.record(z.any())
+});
+export type DomainEvent = z.infer<typeof DomainEventSchema>;
