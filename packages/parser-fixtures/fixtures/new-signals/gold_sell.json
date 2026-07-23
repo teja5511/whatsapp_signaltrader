@@ -1,0 +1,20 @@
+{
+  "name": "gold-sell-full-signal",
+  "source": "user-provided",
+  "input": {
+    "text": "Gold Sell\n4120-4128\n\nsl - 4136\n\ntp - 4112\ntp - 4104\ntp - Open"
+  },
+  "expected": {
+    "category": "NEW_SIGNAL",
+    "instrument": "XAUUSD",
+    "direction": "SELL",
+    "orderIntent": "UNSPECIFIED",
+    "zoneLow": "4120.00000000",
+    "zoneHigh": "4128.00000000",
+    "stopLoss": "4136.00000000",
+    "tp1": "4112.00000000",
+    "tp2": "4104.00000000",
+    "tpOpenPresent": true,
+    "completeness": "COMPLETE"
+  }
+}

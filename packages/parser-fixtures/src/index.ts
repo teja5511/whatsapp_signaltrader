@@ -1,5 +1,11 @@
-import signals from "../fixtures/signals.json";
-import commands from "../fixtures/commands.json";
+import goldSell from "../fixtures/new-signals/gold_sell.json";
+import goldBuyLimit from "../fixtures/new-signals/gold_buy_limit.json";
+import secureProfits from "../fixtures/ambiguous/secure_profits.json";
+import btcSignal from "../fixtures/unsupported/btc_signal.json";
 
-export const SIGNAL_FIXTURES = signals;
-export const COMMAND_FIXTURES = commands;
+export const FIXTURE_SUITE = [
+  goldSell,
+  goldBuyLimit,
+  secureProfits,
+  btcSignal
+];

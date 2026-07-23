@@ -1,0 +1,19 @@
+{
+  "name": "gold-buy-limit-incomplete",
+  "source": "user-provided",
+  "input": {
+    "text": "Gold Sell Limit\n3990-3998\n\nSl - 4008"
+  },
+  "expected": {
+    "category": "NEW_SIGNAL",
+    "instrument": "XAUUSD",
+    "direction": "SELL",
+    "orderIntent": "LIMIT",
+    "zoneLow": "3990.00000000",
+    "zoneHigh": "3998.00000000",
+    "stopLoss": "4008.00000000",
+    "tp1": null,
+    "tp2": null,
+    "completeness": "INCOMPLETE"
+  }
+}

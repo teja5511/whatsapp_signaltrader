@@ -1,0 +1,13 @@
+{
+  "name": "secure-profits-ambiguous",
+  "source": "user-provided",
+  "input": {
+    "text": "Secure Profits."
+  },
+  "expected": {
+    "category": "AMBIGUOUS",
+    "isExecutable": false,
+    "requiresConfirmation": true,
+    "executionEligibility": "REQUIRES_CONFIRMATION"
+  }
+}

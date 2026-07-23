@@ -1,0 +1,12 @@
+{
+  "name": "btc-unsupported-instrument",
+  "source": "negative-test",
+  "input": {
+    "text": "BTCUSD Buy 65000-66000 SL 64000"
+  },
+  "expected": {
+    "category": "UNSUPPORTED",
+    "isExecutable": false,
+    "issueCode": "UNSUPPORTED_INSTRUMENT"
+  }
+}
