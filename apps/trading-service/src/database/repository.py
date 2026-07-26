@@ -6,7 +6,7 @@ from sqlalchemy import select
 from src.database.models import (
     AppSettingModel, WhatsAppMessageModel, DuplicateKeyModel, ParsedMessageModel,
     SignalModel, CampaignModel, CampaignStateTransitionModel, PlannedEntryModel,
-    PendingOrderModel, PositionModel, SystemAuditEventModel, SystemErrorModel
+    SystemAuditEventModel, SystemErrorModel
 )
 from src.domain.schemas import AppSettingsDTO
 

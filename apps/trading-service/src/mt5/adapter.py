@@ -2,11 +2,13 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
+from decimal import Decimal
 from src.mt5.contracts import (
     Mt5TerminalInfoDTO, Mt5AccountInfoDTO, Mt5SymbolResolutionDTO,
     Mt5SymbolSpecificationDTO, Mt5OrderCheckRequestDTO, Mt5OrderCheckResultDTO,
     Mt5OrderSendRequestDTO, Mt5OrderSendResultDTO, Mt5OrderSnapshotDTO,
-    Mt5PositionSnapshotDTO, Mt5StatusDTO
+    Mt5PositionSnapshotDTO, Mt5StatusDTO, Mt5TickDTO, Mt5HistoryOrderDTO,
+    Mt5MutationResultDTO
 )
 
 class MT5AdapterInterface(ABC):
@@ -85,4 +87,52 @@ class MT5AdapterInterface(ABC):
     @abstractmethod
     def get_status(self) -> Mt5StatusDTO:
         """Returns aggregated status summary."""
+        pass
+
+    # -- Mutations ----------------------------------------------------------
+    # These are declared abstract on purpose. An adapter that cannot perform a
+    # mutation must fail loudly; silently skipping it would let the service
+    # layer report success for an operation the broker never saw.
+
+    @abstractmethod
+    def modify_order(
+        self,
+        ticket: int,
+        price: Optional[Decimal] = None,
+        sl: Optional[Decimal] = None,
+        tp: Optional[Decimal] = None
+    ) -> Mt5MutationResultDTO:
+        """Modifies a pending order's price and/or stop levels."""
+        pass
+
+    @abstractmethod
+    def delete_order(self, ticket: int) -> Mt5MutationResultDTO:
+        """Deletes a pending order."""
+        pass
+
+    @abstractmethod
+    def modify_position(
+        self,
+        ticket: int,
+        sl: Decimal,
+        tp: Optional[Decimal] = None
+    ) -> Mt5MutationResultDTO:
+        """Updates an open position's stop loss and take profit."""
+        pass
+
+    @abstractmethod
+    def close_position(self, ticket: int, volume: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        """Closes an open position, fully or partially."""
+        pass
+
+    # -- Market data & history ---------------------------------------------
+
+    @abstractmethod
+    def symbol_tick(self, symbol: str = "XAUUSD") -> Optional[Mt5TickDTO]:
+        """Latest bid/ask, or None when the terminal has no quote available."""
+        pass
+
+    @abstractmethod
+    def history_orders_get(self, magic_number: Optional[int] = None, limit: int = 100) -> List[Mt5HistoryOrderDTO]:
+        """Historical (closed or cancelled) orders."""
         pass

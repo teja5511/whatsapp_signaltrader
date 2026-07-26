@@ -9,9 +9,14 @@ from src.mt5.contracts import (
     Mt5TerminalInfoDTO, Mt5AccountInfoDTO, Mt5SymbolResolutionDTO,
     Mt5SymbolSpecificationDTO, Mt5OrderCheckRequestDTO, Mt5OrderCheckResultDTO,
     Mt5OrderSendRequestDTO, Mt5OrderSendResultDTO, Mt5OrderSnapshotDTO,
-    Mt5PositionSnapshotDTO, Mt5StatusDTO
+    Mt5PositionSnapshotDTO, Mt5StatusDTO, Mt5TickDTO, Mt5HistoryOrderDTO,
+    Mt5MutationResultDTO
 )
 from src.mt5.adapter import MT5AdapterInterface
+
+#: Dry run reports a plausible quote so planning policies can be exercised end
+#: to end without ever touching a terminal.
+DRY_RUN_MID_PRICE = Decimal("3980.00")
 
 class DryRunMT5Adapter(MT5AdapterInterface):
     def __init__(self):
@@ -75,6 +80,38 @@ class DryRunMT5Adapter(MT5AdapterInterface):
         return []
 
     def positions_get(self, magic_number: Optional[int] = None, ticket: Optional[int] = None) -> List[Mt5PositionSnapshotDTO]:
+        return []
+
+    def _refused(self, ticket: int, operation: str) -> Mt5MutationResultDTO:
+        return Mt5MutationResultDTO(
+            ticket=ticket,
+            operation=operation,
+            retcode=0,
+            retcode_name="DRY_RUN_REFUSED",
+            is_success=False,
+            comment="Dry-run adapter never mutates broker state.",
+        )
+
+    def modify_order(self, ticket: int, price: Optional[Decimal] = None, sl: Optional[Decimal] = None, tp: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        return self._refused(ticket, "MODIFY_ORDER")
+
+    def delete_order(self, ticket: int) -> Mt5MutationResultDTO:
+        return self._refused(ticket, "DELETE_ORDER")
+
+    def modify_position(self, ticket: int, sl: Decimal, tp: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        return self._refused(ticket, "MODIFY_POSITION")
+
+    def close_position(self, ticket: int, volume: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        return self._refused(ticket, "CLOSE_POSITION")
+
+    def symbol_tick(self, symbol: str = CANONICAL_SYMBOL_XAUUSD) -> Optional[Mt5TickDTO]:
+        return Mt5TickDTO(
+            symbol=symbol,
+            bid=DRY_RUN_MID_PRICE - Decimal("0.10"),
+            ask=DRY_RUN_MID_PRICE + Decimal("0.10"),
+        )
+
+    def history_orders_get(self, magic_number: Optional[int] = None, limit: int = 100) -> List[Mt5HistoryOrderDTO]:
         return []
 
     def get_status(self) -> Mt5StatusDTO:

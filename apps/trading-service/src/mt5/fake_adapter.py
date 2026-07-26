@@ -12,19 +12,27 @@ from src.mt5.contracts import (
     Mt5TerminalInfoDTO, Mt5AccountInfoDTO, Mt5SymbolResolutionDTO,
     Mt5SymbolSpecificationDTO, Mt5OrderCheckRequestDTO, Mt5OrderCheckResultDTO,
     Mt5OrderSendRequestDTO, Mt5OrderSendResultDTO, Mt5OrderSnapshotDTO,
-    Mt5PositionSnapshotDTO, Mt5StatusDTO
+    Mt5PositionSnapshotDTO, Mt5StatusDTO, Mt5TickDTO, Mt5HistoryOrderDTO,
+    Mt5MutationResultDTO
 )
 from src.mt5.adapter import MT5AdapterInterface
 
+#: Sits below the fixture SELL zone (3990-3998), i.e. BEFORE_ZONE for a sell
+#: limit grid. Tests that need a different classification call ``set_price``.
+DEFAULT_FAKE_MID_PRICE = Decimal("3980.00")
+
 class FakeMT5Adapter(MT5AdapterInterface):
-    def __init__(self, scenario: str = "healthy_demo_hedging"):
+    def __init__(self, scenario: str = "healthy_demo_hedging", mid_price: Decimal = DEFAULT_FAKE_MID_PRICE):
         self.scenario = scenario
         self._initialized = False
         self._health_state = HEALTH_NOT_INITIALIZED
         self._orders: Dict[int, Mt5OrderSnapshotDTO] = {}
         self._positions: Dict[int, Mt5PositionSnapshotDTO] = {}
+        self._history: List[Mt5HistoryOrderDTO] = []
         self._ticket_counter = 5000000
         self._send_counter = 0
+        self.current_bid = mid_price - Decimal("0.10")
+        self.current_ask = mid_price + Decimal("0.10")
 
     @property
     def mode(self) -> str:
@@ -187,37 +195,103 @@ class FakeMT5Adapter(MT5AdapterInterface):
             res = [p for p in res if p.ticket == ticket]
         return res
 
-    def modify_order(self, ticket: int, price: Optional[Decimal] = None, sl: Optional[Decimal] = None, tp: Optional[Decimal] = None) -> bool:
-        if ticket in self._orders:
-            o = self._orders[ticket]
-            if price is not None:
-                o.price = price
-            if sl is not None:
-                o.stop_loss = sl
-            if tp is not None:
-                o.take_profit = tp
-            return True
-        return False
+    def modify_order(self, ticket: int, price: Optional[Decimal] = None, sl: Optional[Decimal] = None, tp: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        if ticket not in self._orders:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="MODIFY_ORDER", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Unknown order ticket {ticket}."
+            )
+        if self.scenario == "modify_outcome_unknown":
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="MODIFY_ORDER", retcode=10031,
+                retcode_name="TRADE_RETCODE_CONNECTION", is_success=False,
+                outcome_unknown=True, comment="Connection lost before confirmation."
+            )
+        o = self._orders[ticket]
+        if price is not None:
+            o.price = price
+        if sl is not None:
+            o.stop_loss = sl
+        if tp is not None:
+            o.take_profit = tp
+        return Mt5MutationResultDTO(ticket=ticket, operation="MODIFY_ORDER", comment="Fake order modified.")
 
-    def delete_order(self, ticket: int) -> bool:
-        if ticket in self._orders:
-            del self._orders[ticket]
-            return True
-        return False
+    def delete_order(self, ticket: int) -> Mt5MutationResultDTO:
+        if ticket not in self._orders:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="DELETE_ORDER", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Unknown order ticket {ticket}."
+            )
+        removed = self._orders.pop(ticket)
+        self._history.append(Mt5HistoryOrderDTO(
+            ticket=removed.ticket,
+            magic_number=removed.magic_number,
+            symbol=removed.symbol,
+            order_type=removed.order_type,
+            volume=removed.volume,
+            price=removed.price,
+            state="CANCELLED",
+            comment=removed.comment,
+        ))
+        return Mt5MutationResultDTO(ticket=ticket, operation="DELETE_ORDER", comment="Fake order deleted.")
 
-    def modify_position(self, ticket: int, sl: Decimal, tp: Optional[Decimal] = None) -> bool:
-        if ticket in self._positions:
-            p = self._positions[ticket]
-            p.stop_loss = sl
-            p.take_profit = tp
-            return True
-        return False
+    def modify_position(self, ticket: int, sl: Decimal, tp: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        if ticket not in self._positions:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="MODIFY_POSITION", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Unknown position ticket {ticket}."
+            )
+        p = self._positions[ticket]
+        p.stop_loss = sl
+        p.take_profit = tp
+        return Mt5MutationResultDTO(ticket=ticket, operation="MODIFY_POSITION", comment="Fake position modified.")
 
-    def close_position(self, ticket: int) -> bool:
-        if ticket in self._positions:
-            del self._positions[ticket]
-            return True
-        return False
+    def close_position(self, ticket: int, volume: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        if ticket not in self._positions:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="CLOSE_POSITION", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Unknown position ticket {ticket}."
+            )
+        if self.scenario == "close_outcome_unknown":
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="CLOSE_POSITION", retcode=10031,
+                retcode_name="TRADE_RETCODE_CONNECTION", is_success=False,
+                outcome_unknown=True, comment="Connection lost before confirmation."
+            )
+        position = self._positions[ticket]
+        if volume is not None and volume < position.volume:
+            position.volume = position.volume - volume
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="CLOSE_POSITION",
+                closed_volume=volume, comment="Fake partial close."
+            )
+        closed_volume = position.volume
+        del self._positions[ticket]
+        return Mt5MutationResultDTO(
+            ticket=ticket, operation="CLOSE_POSITION",
+            closed_volume=closed_volume, comment="Fake position closed."
+        )
+
+    def symbol_tick(self, symbol: str = CANONICAL_SYMBOL_XAUUSD) -> Optional[Mt5TickDTO]:
+        if self.scenario == "no_quote":
+            return None
+        return Mt5TickDTO(symbol=symbol, bid=self.current_bid, ask=self.current_ask)
+
+    def set_price(self, mid: Decimal, spread: Decimal = Decimal("0.20")) -> None:
+        """Test hook so zone-position policies can be exercised deterministically."""
+        half = spread / Decimal("2")
+        self.current_bid = mid - half
+        self.current_ask = mid + half
+
+    def history_orders_get(self, magic_number: Optional[int] = None, limit: int = 100) -> List[Mt5HistoryOrderDTO]:
+        res = list(self._history)
+        if magic_number is not None:
+            res = [h for h in res if h.magic_number == magic_number]
+        return res[:limit]
 
     def get_status(self) -> Mt5StatusDTO:
         acc = self.account_info()

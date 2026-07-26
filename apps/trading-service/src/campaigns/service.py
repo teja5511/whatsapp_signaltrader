@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional, List, Dict, Any, Tuple
+from sqlalchemy.orm import Session
 from src.database.engine import SessionLocal
 from src.database.unit_of_work import UnitOfWork
 from src.database.models import (
@@ -12,10 +14,11 @@ from src.campaigns.constants import (
     STATE_RECEIVED, STATE_PARSED, STATE_WAITING_FOR_TP, STATE_AWAITING_CONFIRMATION,
     STATE_PLANNED, STATE_REJECTED, STATE_CANCELLED, STATE_FAILED,
     REASON_SIGNAL_RECEIVED, REASON_USER_APPROVED, REASON_USER_REJECTED,
-    REASON_EXPLICIT_REENTRY_CREATED, TRIGGER_WHATSAPP_MESSAGE, TRIGGER_USER_ACTION
+    REASON_EXPLICIT_REENTRY_CREATED, TRIGGER_WHATSAPP_MESSAGE, TRIGGER_USER_ACTION,
+    ACTIVE_CAMPAIGN_STATES,
 )
 from src.campaigns.errors import CampaignNotFoundError, ConcurrencyConflictError, InvalidStateTransitionError
-from src.campaigns.state_machine import validate_state_transition
+from src.campaigns.state_machine import validate_state_transition, apply_transition
 from src.campaigns.campaign_factory import CampaignFactory
 from src.campaigns.duplicate_service import DuplicateProtectionService
 from src.campaigns.matching import CampaignMatcher
@@ -25,24 +28,25 @@ class CampaignService:
     def __init__(self, session_factory=SessionLocal):
         self.session_factory = session_factory
 
-    def get_campaign(self, campaign_id: str) -> Optional[Dict[str, Any]]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+    def get_campaign(self, campaign_id: str, session: Optional[Session] = None) -> Optional[Dict[str, Any]]:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             c = uow.campaigns.get_by_id(campaign_id)
             if not c:
                 return None
             return self._to_campaign_dict(c)
 
-    def list_campaigns(self, limit: int = 50) -> List[Dict[str, Any]]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+    def list_campaigns(self, limit: int = 50, session: Optional[Session] = None) -> List[Dict[str, Any]]:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             campaigns = uow.campaigns.list_all(limit=limit)
             return [self._to_campaign_dict(c) for c in campaigns]
 
     def create_campaign_from_message(
         self,
         raw_message_id: str,
-        correlation_id: Optional[str] = None
+        correlation_id: Optional[str] = None,
+        session: Optional[Session] = None
     ) -> Tuple[Dict[str, Any], bool]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             raw_msg = uow.db.get(WhatsAppMessageModel, raw_message_id)
             if not raw_msg or not raw_msg.parsed_message or not raw_msg.parsed_message.signal:
                 raise ValueError(f"Message '{raw_message_id}' does not contain a valid parsed signal.")
@@ -141,9 +145,10 @@ class CampaignService:
         self,
         campaign_id: str,
         expected_version: int,
-        correlation_id: Optional[str] = None
+        correlation_id: Optional[str] = None,
+        session: Optional[Session] = None
     ) -> Dict[str, Any]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             campaign = uow.campaigns.get_by_id(campaign_id)
             if not campaign:
                 raise CampaignNotFoundError(campaign_id)
@@ -151,23 +156,16 @@ class CampaignService:
             if campaign.version != expected_version:
                 raise ConcurrencyConflictError(campaign_id, expected_version, campaign.version)
 
-            validate_state_transition(campaign.current_state, STATE_PLANNED)
-
-            prev_state = campaign.current_state
-            campaign.current_state = STATE_PLANNED
-            campaign.version += 1
-            now_utc = datetime.now(timezone.utc)
-
-            uow.db.add(CampaignStateTransitionModel(
-                campaign_id=campaign.id,
-                from_state=prev_state,
+            apply_transition(
+                db=uow.db,
+                campaign=campaign,
                 to_state=STATE_PLANNED,
                 reason_code=REASON_USER_APPROVED,
                 reason="User explicitly approved campaign via UI confirmation workflow",
                 trigger_type=TRIGGER_USER_ACTION,
+                triggered_by="USER",
                 correlation_id=correlation_id,
-                transitioned_at=now_utc
-            ))
+            )
 
             uow.audit.log_event("CAMPAIGN_APPROVED", {
                 "campaign_id": campaign.id,
@@ -182,9 +180,10 @@ class CampaignService:
         campaign_id: str,
         expected_version: int,
         reason: str = "Rejected by user",
-        correlation_id: Optional[str] = None
+        correlation_id: Optional[str] = None,
+        session: Optional[Session] = None
     ) -> Dict[str, Any]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             campaign = uow.campaigns.get_by_id(campaign_id)
             if not campaign:
                 raise CampaignNotFoundError(campaign_id)
@@ -192,23 +191,16 @@ class CampaignService:
             if campaign.version != expected_version:
                 raise ConcurrencyConflictError(campaign_id, expected_version, campaign.version)
 
-            validate_state_transition(campaign.current_state, STATE_REJECTED)
-
-            prev_state = campaign.current_state
-            campaign.current_state = STATE_REJECTED
-            campaign.version += 1
-            now_utc = datetime.now(timezone.utc)
-
-            uow.db.add(CampaignStateTransitionModel(
-                campaign_id=campaign.id,
-                from_state=prev_state,
+            apply_transition(
+                db=uow.db,
+                campaign=campaign,
                 to_state=STATE_REJECTED,
                 reason_code=REASON_USER_REJECTED,
                 reason=reason,
                 trigger_type=TRIGGER_USER_ACTION,
+                triggered_by="USER",
                 correlation_id=correlation_id,
-                transitioned_at=now_utc
-            ))
+            )
 
             uow.audit.log_event("CAMPAIGN_REJECTED", {
                 "campaign_id": campaign.id,
@@ -218,8 +210,8 @@ class CampaignService:
 
             return self._to_campaign_dict(campaign)
 
-    def process_message(self, raw_message_id: str) -> Dict[str, Any]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+    def process_message(self, raw_message_id: str, session: Optional[Session] = None) -> Dict[str, Any]:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             raw_msg = uow.db.get(WhatsAppMessageModel, raw_message_id)
             if not raw_msg or not raw_msg.parsed_message:
                 raise ValueError(f"Message '{raw_message_id}' or parsed payload not found.")
@@ -318,8 +310,8 @@ class CampaignService:
 
             return {"type": "FOLLOW_UP_COMMAND", "status": "attached", "campaign_id": matched_campaign.id}
 
-    def get_campaign_transitions(self, campaign_id: str) -> List[Dict[str, Any]]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+    def get_campaign_transitions(self, campaign_id: str, session: Optional[Session] = None) -> List[Dict[str, Any]]:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             transitions = (
                 uow.db.query(CampaignStateTransitionModel)
                 .filter(CampaignStateTransitionModel.campaign_id == campaign_id)
@@ -342,8 +334,8 @@ class CampaignService:
                 for t in transitions
             ]
 
-    def get_campaign_commands(self, campaign_id: str) -> List[Dict[str, Any]]:
-        with UnitOfWork(session_factory=self.session_factory) as uow:
+    def get_campaign_commands(self, campaign_id: str, session: Optional[Session] = None) -> List[Dict[str, Any]]:
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
             cmds = (
                 uow.db.query(CommandModel)
                 .filter(CommandModel.campaign_id == campaign_id)
@@ -362,6 +354,23 @@ class CampaignService:
                 for c in cmds
             ]
 
+    def count_other_active_campaigns(self, campaign_id: str, session: Optional[Session] = None) -> int:
+        """Active campaigns other than this one - input to the concurrency policy."""
+        with UnitOfWork(session_factory=self.session_factory, session=session) as uow:
+            return (
+                uow.db.query(CampaignModel)
+                .filter(CampaignModel.id != campaign_id)
+                .filter(CampaignModel.current_state.in_(tuple(ACTIVE_CAMPAIGN_STATES)))
+                .count()
+            )
+
+    @staticmethod
+    def _decimal_str(value, places: int = 8) -> Optional[str]:
+        """Financial values cross the wire as exact decimal strings, never floats."""
+        if value is None:
+            return None
+        return f"{Decimal(str(value)):.{places}f}"
+
     def _to_campaign_dict(self, c: CampaignModel) -> Dict[str, Any]:
         return {
             "id": c.id,
@@ -373,13 +382,13 @@ class CampaignService:
             "current_state": c.current_state,
             "execution_mode": c.execution_mode.value if hasattr(c.execution_mode, "value") else str(c.execution_mode),
             "entry_count": c.entry_count,
-            "lot_per_entry": c.lot_per_entry,
-            "total_volume": c.total_volume,
-            "maximum_total_lots": c.maximum_total_lots,
-            "requested_total_lots": c.requested_total_lots,
-            "current_stop_loss": c.current_stop_loss,
-            "tp1": c.tp1,
-            "tp2": c.tp2,
+            "lot_per_entry": self._decimal_str(c.lot_per_entry, 4),
+            "total_volume": self._decimal_str(c.total_volume, 4),
+            "maximum_total_lots": self._decimal_str(c.maximum_total_lots, 4),
+            "requested_total_lots": self._decimal_str(c.requested_total_lots, 4),
+            "current_stop_loss": self._decimal_str(c.current_stop_loss),
+            "tp1": self._decimal_str(c.tp1),
+            "tp2": self._decimal_str(c.tp2),
             "has_tp_open": c.has_tp_open,
             "version": c.version,
             "trading_enabled": False,

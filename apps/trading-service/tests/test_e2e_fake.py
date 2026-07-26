@@ -24,6 +24,7 @@ def test_e2e_fake_confirmation_and_execution():
     worker = MT5ExecutionWorker(adapter=mt5_service.adapter, session_factory=SessionLocal)
 
     ctrl.pause_automation()
+    ctrl.enable_demo_trading("ENABLE DEMO XAUUSD TRADING")
 
     # 1. Ingest WhatsApp Signal
     raw_text = "BUY XAUUSD @ 4010 - 4020 SL: 3995 TP1: 4040 TP2: 4060"

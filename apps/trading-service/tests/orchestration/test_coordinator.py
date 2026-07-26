@@ -10,6 +10,7 @@ def test_coordinator_signal_confirmation_pipeline():
     ctrl = ControlPolicyManager()
 
     ctrl.pause_automation()
+    ctrl.enable_demo_trading("ENABLE DEMO XAUUSD TRADING")
 
     raw_text = "BUY XAUUSD @ 4000 - 4005 SL: 3990 TP1: 4020 TP2: 4030"
     parse_res, _ = parse_service.parse_and_persist(

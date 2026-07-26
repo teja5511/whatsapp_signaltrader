@@ -2,7 +2,7 @@
 
 import json
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -67,7 +67,17 @@ class MT5ExecutionQueue:
         return batch, jobs
 
     @staticmethod
-    def claim_next_job(db: Session, worker_id: str = "worker-1") -> Optional[MT5ExecutionJobModel]:
+    def claim_next_job(
+        db: Session,
+        worker_id: str = "worker-1",
+        lease_seconds: int = 120,
+    ) -> Optional[MT5ExecutionJobModel]:
+        """Claim the highest-priority queued job under a time-boxed lease.
+
+        The lease is what makes crash recovery safe: a RUNNING job whose lease
+        has expired is reclassified as OUTCOME_UNKNOWN by the recovery sweep
+        rather than being handed to another worker and sent twice.
+        """
         now_utc = datetime.now(timezone.utc)
         job = (
             db.query(MT5ExecutionJobModel)
@@ -82,11 +92,41 @@ class MT5ExecutionQueue:
         job.status = JOB_RUNNING
         job.locked_at = now_utc
         job.locked_by = worker_id
+        job.lease_expires_at = now_utc + timedelta(seconds=lease_seconds)
         job.started_at = now_utc
         job.attempt_count += 1
         job.updated_at = now_utc
         db.flush()
         return job
+
+    @staticmethod
+    def mark_outcome_unknown(db: Session, job_id: str, error_code: str, error_msg: str) -> None:
+        """Terminal state for a send whose result was never confirmed.
+
+        Counts against the batch like a failure but is never retried
+        automatically and always requires manual review.
+        """
+        now_utc = datetime.now(timezone.utc)
+        job = db.get(MT5ExecutionJobModel, job_id)
+        if not job:
+            return
+
+        job.status = JOB_OUTCOME_UNKNOWN
+        job.last_error_code = error_code
+        job.last_error_message = error_msg
+        job.requires_manual_review = True
+        job.lease_expires_at = None
+        job.completed_at = now_utc
+        job.updated_at = now_utc
+
+        if job.batch_id:
+            batch = db.get(MT5ExecutionBatchModel, job.batch_id)
+            if batch:
+                batch.failed_jobs += 1
+                if batch.completed_jobs + batch.failed_jobs >= batch.total_jobs:
+                    batch.status = BATCH_FAILED if batch.completed_jobs == 0 else BATCH_PARTIALLY_PLACED
+                batch.updated_at = now_utc
+        db.flush()
 
     @staticmethod
     def complete_job(db: Session, job_id: str, result_dict: Dict[str, Any]) -> None:
@@ -95,6 +135,7 @@ class MT5ExecutionQueue:
         if job:
             job.status = JOB_SUCCEEDED
             job.result_json = json.dumps(result_dict)
+            job.lease_expires_at = None
             job.completed_at = now_utc
             job.updated_at = now_utc
 
@@ -115,6 +156,7 @@ class MT5ExecutionQueue:
             job.status = JOB_FAILED
             job.last_error_code = error_code
             job.last_error_message = error_msg
+            job.lease_expires_at = None
             job.completed_at = now_utc
             job.updated_at = now_utc
 

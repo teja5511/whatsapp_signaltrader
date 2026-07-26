@@ -17,7 +17,8 @@ from src.mt5.contracts import (
     Mt5TerminalInfoDTO, Mt5AccountInfoDTO, Mt5SymbolResolutionDTO,
     Mt5SymbolSpecificationDTO, Mt5OrderCheckRequestDTO, Mt5OrderCheckResultDTO,
     Mt5OrderSendRequestDTO, Mt5OrderSendResultDTO, Mt5OrderSnapshotDTO,
-    Mt5PositionSnapshotDTO, Mt5StatusDTO
+    Mt5PositionSnapshotDTO, Mt5StatusDTO, Mt5TickDTO, Mt5HistoryOrderDTO,
+    Mt5MutationResultDTO
 )
 from src.mt5.adapter import MT5AdapterInterface
 from src.mt5.errors import (
@@ -425,6 +426,212 @@ class RealMT5Adapter(MT5AdapterInterface):
                 state="OPEN"
             ))
         return res
+
+    # -- Mutations ----------------------------------------------------------
+
+    def _assert_demo_hedging(self) -> None:
+        """Re-verify the account immediately before every mutating call."""
+        acc = self.account_info()
+        if acc.environment_kind != ENV_DEMO or acc.margin_mode != MARGIN_HEDGING:
+            raise MT5LiveAccountBlockedError(acc.login, acc.environment_kind)
+
+    def _send_and_classify(self, request_dict: Dict[str, Any], ticket: int, operation: str) -> Mt5MutationResultDTO:
+        """Submit a mutation and classify the outcome.
+
+        A ``None`` result from ``order_send`` means the request may or may not
+        have reached the server, so it is reported as ``outcome_unknown`` and
+        must be reconciled rather than retried.
+        """
+        try:
+            res = mt5.order_send(request_dict)
+        except Exception as exc:  # pragma: no cover - depends on terminal state
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation=operation, retcode=-1,
+                retcode_name="SEND_EXCEPTION", is_success=False,
+                outcome_unknown=True, comment=str(exc)
+            )
+
+        if res is None:
+            err = mt5.last_error()
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation=operation, retcode=int(err[0]),
+                retcode_name="SEND_FAILED", is_success=False,
+                outcome_unknown=True, comment=str(err[1])
+            )
+
+        retcode = int(res.retcode)
+        return Mt5MutationResultDTO(
+            ticket=ticket,
+            operation=operation,
+            retcode=retcode,
+            retcode_name=str(getattr(res, "comment", "")) or "TRADE_RETCODE",
+            is_success=retcode in (10008, 10009),
+            outcome_unknown=False,
+            comment=str(getattr(res, "comment", "")),
+            closed_volume=Decimal(str(getattr(res, "volume", 0) or 0)) or None,
+        )
+
+    def modify_order(
+        self,
+        ticket: int,
+        price: Optional[Decimal] = None,
+        sl: Optional[Decimal] = None,
+        tp: Optional[Decimal] = None
+    ) -> Mt5MutationResultDTO:
+        if not HAS_MT5_PACKAGE or not self.is_initialized():
+            raise MT5InitializeFailedError("Adapter not initialized for modify_order.")
+        self._assert_demo_hedging()
+
+        existing = self.orders_get(ticket=ticket)
+        if not existing:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="MODIFY_ORDER", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Pending order {ticket} not present at broker."
+            )
+        current = existing[0]
+
+        request_dict = {
+            "action": mt5.TRADE_ACTION_MODIFY,
+            "order": int(ticket),
+            "price": float(price if price is not None else current.price),
+            "sl": float(sl if sl is not None else current.stop_loss),
+            "tp": float(tp if tp is not None else (current.take_profit or 0)),
+            "type_time": mt5.ORDER_TIME_GTC,
+        }
+        return self._send_and_classify(request_dict, ticket, "MODIFY_ORDER")
+
+    def delete_order(self, ticket: int) -> Mt5MutationResultDTO:
+        if not HAS_MT5_PACKAGE or not self.is_initialized():
+            raise MT5InitializeFailedError("Adapter not initialized for delete_order.")
+        self._assert_demo_hedging()
+
+        request_dict = {"action": mt5.TRADE_ACTION_REMOVE, "order": int(ticket)}
+        return self._send_and_classify(request_dict, ticket, "DELETE_ORDER")
+
+    def modify_position(
+        self,
+        ticket: int,
+        sl: Decimal,
+        tp: Optional[Decimal] = None
+    ) -> Mt5MutationResultDTO:
+        if not HAS_MT5_PACKAGE or not self.is_initialized():
+            raise MT5InitializeFailedError("Adapter not initialized for modify_position.")
+        self._assert_demo_hedging()
+
+        existing = self.positions_get(ticket=ticket)
+        if not existing:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="MODIFY_POSITION", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Position {ticket} not present at broker."
+            )
+        current = existing[0]
+
+        request_dict = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": int(ticket),
+            "symbol": current.symbol,
+            "sl": float(sl),
+            "tp": float(tp if tp is not None else (current.take_profit or 0)),
+        }
+        return self._send_and_classify(request_dict, ticket, "MODIFY_POSITION")
+
+    def close_position(self, ticket: int, volume: Optional[Decimal] = None) -> Mt5MutationResultDTO:
+        if not HAS_MT5_PACKAGE or not self.is_initialized():
+            raise MT5InitializeFailedError("Adapter not initialized for close_position.")
+        self._assert_demo_hedging()
+
+        existing = self.positions_get(ticket=ticket)
+        if not existing:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="CLOSE_POSITION", retcode=10013,
+                retcode_name="TRADE_RETCODE_INVALID", is_success=False,
+                comment=f"Position {ticket} not present at broker."
+            )
+        current = existing[0]
+        close_volume = volume if volume is not None else current.volume
+        if close_volume > current.volume:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="CLOSE_POSITION", retcode=10014,
+                retcode_name="TRADE_RETCODE_INVALID_VOLUME", is_success=False,
+                comment=f"Close volume {close_volume} exceeds position volume {current.volume}."
+            )
+
+        tick = self.symbol_tick(current.symbol)
+        if tick is None:
+            return Mt5MutationResultDTO(
+                ticket=ticket, operation="CLOSE_POSITION", retcode=10021,
+                retcode_name="TRADE_RETCODE_NO_QUOTES", is_success=False,
+                comment="No quote available to price the closing deal."
+            )
+
+        # Closing a hedged position means sending the opposite deal against it.
+        if current.position_type == "BUY":
+            close_type, close_price = mt5.ORDER_TYPE_SELL, float(tick.bid)
+        else:
+            close_type, close_price = mt5.ORDER_TYPE_BUY, float(tick.ask)
+
+        request_dict = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": int(ticket),
+            "symbol": current.symbol,
+            "volume": float(close_volume),
+            "type": close_type,
+            "price": close_price,
+            "deviation": 20,
+            "magic": current.magic_number,
+            "comment": "close",
+            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_time": mt5.ORDER_TIME_GTC,
+        }
+        result = self._send_and_classify(request_dict, ticket, "CLOSE_POSITION")
+        if result.is_success:
+            result.closed_volume = close_volume
+        return result
+
+    # -- Market data & history ---------------------------------------------
+
+    def symbol_tick(self, symbol: str = CANONICAL_SYMBOL_XAUUSD) -> Optional[Mt5TickDTO]:
+        if not HAS_MT5_PACKAGE:
+            return None
+        resolved = symbol
+        if symbol == CANONICAL_SYMBOL_XAUUSD:
+            resolution = self.resolve_symbol()
+            if resolution.is_resolved:
+                resolved = resolution.broker_symbol
+        tick = mt5.symbol_info_tick(resolved)
+        if tick is None or not getattr(tick, "bid", 0) or not getattr(tick, "ask", 0):
+            return None
+        return Mt5TickDTO(
+            symbol=resolved,
+            bid=Decimal(str(tick.bid)),
+            ask=Decimal(str(tick.ask)),
+        )
+
+    def history_orders_get(self, magic_number: Optional[int] = None, limit: int = 100) -> List[Mt5HistoryOrderDTO]:
+        if not HAS_MT5_PACKAGE or not self.is_initialized():
+            return []
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        orders = mt5.history_orders_get(now - timedelta(days=30), now)
+        if not orders:
+            return []
+        res: List[Mt5HistoryOrderDTO] = []
+        for o in orders:
+            if magic_number is not None and getattr(o, "magic", None) != magic_number:
+                continue
+            res.append(Mt5HistoryOrderDTO(
+                ticket=int(o.ticket),
+                magic_number=int(getattr(o, "magic", 0)),
+                symbol=str(o.symbol),
+                order_type="BUY_LIMIT" if getattr(o, "type", None) == mt5.ORDER_TYPE_BUY_LIMIT else "SELL_LIMIT",
+                volume=Decimal(str(getattr(o, "volume_initial", 0))),
+                price=Decimal(str(getattr(o, "price_open", 0))),
+                state="HISTORY",
+                comment=str(getattr(o, "comment", "") or ""),
+            ))
+        return res[:limit]
 
     def get_status(self) -> Mt5StatusDTO:
         if not self._initialized:

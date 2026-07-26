@@ -20,7 +20,9 @@ class OutboxPublisher:
         campaign_id: Optional[str] = None,
         causation_id: Optional[str] = None,
         actor_type: str = "SYSTEM",
-        actor_id: Optional[str] = None
+        actor_id: Optional[str] = None,
+        severity: Optional[str] = None,
+        **kwargs
     ) -> DomainEventModel:
         event_id = str(uuid4())
         outbox_id = str(uuid4())

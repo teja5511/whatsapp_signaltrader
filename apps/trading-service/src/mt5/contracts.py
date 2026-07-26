@@ -126,6 +126,43 @@ class Mt5PositionSnapshotDTO(BaseModel):
     comment: str
     state: str = "OPEN"
 
+class Mt5TickDTO(BaseModel):
+    symbol: str = CANONICAL_SYMBOL_XAUUSD
+    bid: Decimal
+    ask: Decimal
+    captured_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @property
+    def mid(self) -> Decimal:
+        return (self.bid + self.ask) / Decimal("2")
+
+class Mt5HistoryOrderDTO(BaseModel):
+    ticket: int
+    magic_number: int = 0
+    symbol: str = CANONICAL_SYMBOL_XAUUSD
+    order_type: str = "SELL_LIMIT"
+    volume: Decimal = Decimal("0.00")
+    price: Decimal = Decimal("0.00")
+    state: str = "HISTORY"
+    comment: str = ""
+    closed_at: Optional[str] = None
+
+class Mt5MutationResultDTO(BaseModel):
+    """Outcome of a broker-side mutation (modify / delete / close).
+
+    ``outcome_unknown`` is set when the request was transmitted but the result
+    could not be confirmed. Callers must never treat that as success and must
+    never blindly resend.
+    """
+    ticket: int
+    operation: str
+    retcode: int = 10009
+    retcode_name: str = "TRADE_RETCODE_DONE"
+    is_success: bool = True
+    outcome_unknown: bool = False
+    comment: str = ""
+    closed_volume: Optional[Decimal] = None
+
 class Mt5StatusDTO(BaseModel):
     adapter_mode: str = MODE_FAKE
     health_state: str = HEALTH_NOT_INITIALIZED

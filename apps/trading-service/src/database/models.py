@@ -1,10 +1,22 @@
 from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import (
-    String, Boolean, Integer, Float, DateTime, ForeignKey, Text, UniqueConstraint, Index
+    String, Boolean, Integer, DateTime, ForeignKey, Text, UniqueConstraint, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database.engine import Base
+from src.database.types import DecimalText
+
+# Column type factories. DecimalText instances are stateful, so each column
+# gets its own instance rather than sharing a module-level singleton.
+def _price() -> DecimalText:
+    return DecimalText(scale=8)
+
+def _volume() -> DecimalText:
+    return DecimalText(scale=4)
+
+def _money() -> DecimalText:
+    return DecimalText(scale=2)
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -19,6 +31,24 @@ class AppSettingModel(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class TradingPolicyModel(Base):
+    """Persisted resolution state for every unresolved trading rule.
+
+    A policy row exists for each entry in the policy catalog. Until an operator
+    explicitly confirms one, ``status`` stays UNRESOLVED and any pipeline that
+    depends on it must block rather than guess.
+    """
+    __tablename__ = "trading_policies"
+    __table_args__ = {'extend_existing': True}
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    selected_option: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    parameters_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="UNRESOLVED")
+    confirmed_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 class WhatsAppMessageModel(Base):
@@ -66,11 +96,11 @@ class SignalModel(Base):
     parsed_message_id: Mapped[str] = mapped_column(String(36), ForeignKey("parsed_messages.id"), nullable=False)
     symbol: Mapped[str] = mapped_column(String(16), nullable=False, default="XAUUSD")
     direction: Mapped[str] = mapped_column(String(8), nullable=False)
-    entry_min: Mapped[float] = mapped_column(Float, nullable=False)
-    entry_max: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    tp1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    tp2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    entry_min: Mapped[object] = mapped_column(_price(), nullable=False)
+    entry_max: Mapped[object] = mapped_column(_price(), nullable=False)
+    stop_loss: Mapped[object] = mapped_column(_price(), nullable=False)
+    tp1: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
+    tp2: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
     has_tp_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -90,13 +120,13 @@ class CampaignModel(Base):
     current_state: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     execution_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    lot_per_entry: Mapped[float] = mapped_column(Float, nullable=False)
-    total_volume: Mapped[float] = mapped_column(Float, nullable=False)
-    maximum_total_lots: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
-    requested_total_lots: Mapped[float] = mapped_column(Float, nullable=False, default=1.5)
-    current_stop_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    tp1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    tp2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    lot_per_entry: Mapped[object] = mapped_column(_volume(), nullable=False)
+    total_volume: Mapped[object] = mapped_column(_volume(), nullable=False)
+    maximum_total_lots: Mapped[object] = mapped_column(_volume(), nullable=False, default="2.0000")
+    requested_total_lots: Mapped[object] = mapped_column(_volume(), nullable=False, default="1.5000")
+    current_stop_loss: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
+    tp1: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
+    tp2: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
     has_tp_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
@@ -151,53 +181,18 @@ class PlannedEntryModel(Base):
     campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
     entry_sequence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=1)
     ladder_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False)
-    volume: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price: Mapped[object] = mapped_column(_price(), nullable=False)
+    volume: Mapped[object] = mapped_column(_volume(), nullable=False)
+    stop_loss: Mapped[object] = mapped_column(_price(), nullable=False)
+    take_profit: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
     tp_category: Mapped[str] = mapped_column(String(16), nullable=False, default="TP1")
     tp_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     order_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    order_comment: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     magic_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     campaign: Mapped["CampaignModel"] = relationship("CampaignModel", back_populates="planned_entries")
-
-class PendingOrderModel(Base):
-    __tablename__ = "pending_orders"
-    __table_args__ = {'extend_existing': True}
-
-    ticket: Mapped[int] = mapped_column(Integer, primary_key=True)
-    campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
-    planned_entry_id: Mapped[str] = mapped_column(String(36), ForeignKey("planned_entries.id"), nullable=False)
-    magic_number: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
-    symbol: Mapped[str] = mapped_column(String(16), nullable=False, default="XAUUSD")
-    order_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    volume: Mapped[float] = mapped_column(Float, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    state: Mapped[str] = mapped_column(String(16), nullable=False, default="PLACED")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
-
-class PositionModel(Base):
-    __tablename__ = "positions"
-    __table_args__ = {'extend_existing': True}
-
-    ticket: Mapped[int] = mapped_column(Integer, primary_key=True)
-    campaign_id: Mapped[str] = mapped_column(String(36), ForeignKey("campaigns.id"), index=True, nullable=False)
-    planned_entry_id: Mapped[str] = mapped_column(String(36), ForeignKey("planned_entries.id"), nullable=False)
-    magic_number: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
-    symbol: Mapped[str] = mapped_column(String(16), nullable=False, default="XAUUSD")
-    position_type: Mapped[str] = mapped_column(String(8), nullable=False)
-    volume: Mapped[float] = mapped_column(Float, nullable=False)
-    price_open: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    state: Mapped[str] = mapped_column(String(16), nullable=False, default="OPEN")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 class SystemAuditEventModel(Base):
     __tablename__ = "system_audit_events"
@@ -240,6 +235,7 @@ class MT5ExecutionJobModel(Base):
     __table_args__ = (
         Index("idx_mt5_job_status", "status"),
         Index("idx_mt5_job_idempotency", "idempotency_key"),
+        Index("idx_mt5_job_lease", "status", "lease_expires_at"),
         {'extend_existing': True}
     )
 
@@ -260,6 +256,8 @@ class MT5ExecutionJobModel(Base):
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     locked_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    requires_manual_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -278,10 +276,10 @@ class MT5AccountSnapshotModel(Base):
     margin_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     currency: Mapped[str] = mapped_column(String(16), nullable=False, default="USD")
     leverage: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    balance: Mapped[float] = mapped_column(Float, nullable=False)
-    equity: Mapped[float] = mapped_column(Float, nullable=False)
-    margin: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    margin_free: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    balance: Mapped[object] = mapped_column(_money(), nullable=False)
+    equity: Mapped[object] = mapped_column(_money(), nullable=False)
+    margin: Mapped[object] = mapped_column(_money(), nullable=False, default="0.00")
+    margin_free: Mapped[object] = mapped_column(_money(), nullable=False, default="0.00")
     trade_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     trade_expert: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -294,15 +292,15 @@ class MT5SymbolSnapshotModel(Base):
     canonical_symbol: Mapped[str] = mapped_column(String(16), nullable=False, default="XAUUSD")
     broker_symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     digits: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
-    point: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
-    tick_size: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
-    volume_min: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
-    volume_max: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
-    volume_step: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
+    point: Mapped[object] = mapped_column(_price(), nullable=False, default="0.01000000")
+    tick_size: Mapped[object] = mapped_column(_price(), nullable=False, default="0.01000000")
+    volume_min: Mapped[object] = mapped_column(_volume(), nullable=False, default="0.0100")
+    volume_max: Mapped[object] = mapped_column(_volume(), nullable=False, default="100.0000")
+    volume_step: Mapped[object] = mapped_column(_volume(), nullable=False, default="0.0100")
     stops_level_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     freeze_level_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trade_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="FULL")
-    contract_size: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
+    contract_size: Mapped[object] = mapped_column(_volume(), nullable=False, default="100.0000")
     snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -317,10 +315,10 @@ class MT5OrderRecordModel(Base):
     magic_number: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     order_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    volume: Mapped[float] = mapped_column(Float, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    volume: Mapped[object] = mapped_column(_volume(), nullable=False)
+    price: Mapped[object] = mapped_column(_price(), nullable=False)
+    stop_loss: Mapped[object] = mapped_column(_price(), nullable=False)
+    take_profit: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
     comment: Mapped[str] = mapped_column(String(128), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="PLACED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -337,11 +335,11 @@ class MT5PositionRecordModel(Base):
     magic_number: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     position_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    volume: Mapped[float] = mapped_column(Float, nullable=False)
-    price_open: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    volume: Mapped[object] = mapped_column(_volume(), nullable=False)
+    price_open: Mapped[object] = mapped_column(_price(), nullable=False)
+    stop_loss: Mapped[object] = mapped_column(_price(), nullable=False)
+    take_profit: Mapped[Optional[object]] = mapped_column(_price(), nullable=True)
+    profit: Mapped[object] = mapped_column(_money(), nullable=False, default="0.00")
     comment: Mapped[str] = mapped_column(String(128), nullable=False)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -358,8 +356,8 @@ class MT5OrderCheckModel(Base):
     retcode_name: Mapped[str] = mapped_column(String(64), nullable=False)
     is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False)
     comment: Mapped[str] = mapped_column(String(256), nullable=False)
-    margin: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    margin_free: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    margin: Mapped[object] = mapped_column(_money(), nullable=False, default="0.00")
+    margin_free: Mapped[object] = mapped_column(_money(), nullable=False, default="0.00")
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 class MT5ExecutionAttemptModel(Base):
@@ -419,6 +417,7 @@ class OrchestrationRunModel(Base):
     error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -463,6 +462,7 @@ class DomainEventModel(Base):
     event_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     event_version: Mapped[str] = mapped_column(String(16), nullable=False, default="1.0")
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="INFO")
     aggregate_type: Mapped[str] = mapped_column(String(32), nullable=False)
     aggregate_id: Mapped[str] = mapped_column(String(64), nullable=False)
     campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True, index=True)
@@ -487,6 +487,8 @@ class EventOutboxModel(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    locked_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -519,4 +521,131 @@ class ControlStateModel(Base):
     mt5_execution_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     orchestrator_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     event_dispatcher_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    shutdown_state: Mapped[str] = mapped_column(String(32), nullable=False, default="RUNNING")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+# Phase 11 Reconciliation, Recovery & Reliability Models
+
+class ReconciliationRunModel(Base):
+    __tablename__ = "reconciliation_runs"
+    __table_args__ = (
+        Index("idx_recon_run_status", "status"),
+        Index("idx_recon_run_trigger", "trigger_type"),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    reconciliation_version: Mapped[str] = mapped_column(String(16), nullable=False, default="1.0.0")
+    trigger_type: Mapped[str] = mapped_column(String(32), nullable=False, default="MANUAL")
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="ALL")
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True, index=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor: Mapped[str] = mapped_column(String(32), nullable=False, default="SYSTEM")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="RUNNING")
+    broker_symbol: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    local_order_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    local_position_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    broker_order_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    broker_position_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    mismatch_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requires_review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    items: Mapped[List["ReconciliationItemModel"]] = relationship("ReconciliationItemModel", back_populates="run", cascade="all, delete-orphan")
+
+class ReconciliationItemModel(Base):
+    __tablename__ = "reconciliation_items"
+    __table_args__ = (
+        Index("idx_recon_item_run", "reconciliation_run_id"),
+        Index("idx_recon_item_class", "classification"),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    reconciliation_run_id: Mapped[str] = mapped_column(String(36), ForeignKey("reconciliation_runs.id"), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    ticket: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    magic_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("campaigns.id"), nullable=True)
+    planned_entry_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("planned_entries.id"), nullable=True)
+    job_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("mt5_execution_jobs.id"), nullable=True)
+    local_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    broker_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    differences_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resolution_status: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")
+    resolution_action: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    resolved_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    run: Mapped["ReconciliationRunModel"] = relationship("ReconciliationRunModel", back_populates="items")
+
+class RecoveryActionModel(Base):
+    __tablename__ = "recovery_actions"
+    __table_args__ = (
+        Index("idx_recovery_kind", "action_kind"),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    recovery_version: Mapped[str] = mapped_column(String(16), nullable=False, default="1.0.0")
+    action_kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_state: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    new_state: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor: Mapped[str] = mapped_column(String(32), nullable=False, default="SYSTEM")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
+
+class SystemLockModel(Base):
+    """Cooperative cross-process lease. Used for the migration lock and to keep
+    exactly one MT5 execution writer alive at a time."""
+    __tablename__ = "system_locks"
+    __table_args__ = {'extend_existing': True}
+
+    lock_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+class HealthIncidentModel(Base):
+    __tablename__ = "health_incidents"
+    __table_args__ = (
+        Index("idx_incident_status", "status"),
+        Index("idx_incident_kind", "incident_kind"),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    incident_kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False, default="WARNING")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="OPEN")
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class WorkerHeartbeatModel(Base):
+    __tablename__ = "worker_heartbeats"
+    __table_args__ = {'extend_existing': True}
+
+    worker_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    worker_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="IDLE")
+    detail_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

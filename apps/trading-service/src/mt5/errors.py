@@ -57,6 +57,32 @@ class ExecutionOutcomeUnknownError(MT5Error):
     def __init__(self, job_id: str, reason: str):
         super().__init__(f"Execution outcome unknown for job '{job_id}': {reason}. Automatic retry blocked.", code="EXECUTION_OUTCOME_UNKNOWN")
 
+class BrokerMutationFailedError(MT5Error):
+    def __init__(self, ticket: int, operation: str, retcode: int, comment: str):
+        super().__init__(
+            f"Broker rejected {operation} on ticket {ticket} [retcode {retcode}]: {comment}",
+            code="BROKER_MUTATION_FAILED",
+            details={"ticket": ticket, "operation": operation, "retcode": retcode, "comment": comment},
+        )
+        self.ticket = ticket
+        self.operation = operation
+
+class BrokerOutcomeUnknownError(MT5Error):
+    """The request left the process but the result was never confirmed.
+
+    Local state is deliberately left untouched: reconciliation resolves it, and
+    the operation is never retried automatically.
+    """
+    def __init__(self, ticket: int, operation: str, comment: str):
+        super().__init__(
+            f"Outcome unknown for {operation} on ticket {ticket}: {comment}. "
+            "Local state unchanged; resolve via reconciliation.",
+            code="BROKER_OUTCOME_UNKNOWN",
+            details={"ticket": ticket, "operation": operation, "comment": comment},
+        )
+        self.ticket = ticket
+        self.operation = operation
+
 class UnauthorizedLocalApiError(MT5Error):
     def __init__(self):
         super().__init__("Invalid or missing local API authorization token.", code="UNAUTHORIZED_LOCAL_API")

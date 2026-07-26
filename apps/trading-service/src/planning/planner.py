@@ -11,7 +11,7 @@ from src.planning.price_normalization import normalize_price_levels
 from src.planning.volume_normalization import validate_and_normalize_volume
 from src.planning.tp_allocation import allocate_tp_categories
 from src.planning.tp_calculation import calculate_entry_tp
-from src.planning.risk_engine import validate_campaign_risk
+from src.planning.risk_engine import validate_campaign_risk, evaluate_current_price_position
 
 def generate_entry_magic_number(campaign_id: str, entry_sequence: int) -> int:
     seed = f"{campaign_id}:{entry_sequence}".encode("utf-8")
@@ -68,7 +68,10 @@ def plan_campaign_entries(
     tp_open_present: bool,
     campaign_version: int = 1,
     spec: Optional[SymbolSpecification] = None,
-    policies: Optional[PlanningPolicySnapshot] = None
+    policies: Optional[PlanningPolicySnapshot] = None,
+    current_price: Optional[Decimal] = None,
+    active_campaign_count: int = 0,
+    trading_enabled: bool = False,
 ) -> Dict[str, Any]:
     spec = spec or get_default_xauusd_spec()
     policies = policies or get_production_default_policies()
@@ -99,8 +102,12 @@ def plan_campaign_entries(
         entry_count=entry_count,
         stop_loss=stop_loss,
         price_levels=norm_levels,
-        trading_enabled=False,
-        policies=policies
+        trading_enabled=trading_enabled,
+        policies=policies,
+        current_price=current_price,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        active_campaign_count=active_campaign_count,
     )
     all_issues.extend(risk_issues)
 
@@ -178,6 +185,9 @@ def plan_campaign_entries(
         "tp1": f"{tp1:.8f}" if tp1 else None,
         "tp2": f"{tp2:.8f}" if tp2 else None,
         "tp_open_present": tp_open_present,
+        "current_price": f"{current_price:.8f}" if current_price is not None else None,
+        "price_zone_position": evaluate_current_price_position(direction, current_price, zone_low, zone_high),
+        "active_campaign_count": active_campaign_count,
         "is_valid": not has_errors,
         "validation_issues": all_issues,
         "planned_entries": planned_entries if not has_errors else [],
