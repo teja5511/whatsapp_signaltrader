@@ -20,6 +20,8 @@
     "desktop:tauri:dev": "pnpm --filter @whatsapp-bot/desktop tauri dev",
     "desktop:tauri:build": "pnpm --filter @whatsapp-bot/desktop tauri build",
     "desktop:visual": "pnpm --filter @whatsapp-bot/desktop test:watch",
+    "whatsapp:dev": "pnpm --filter @whatsapp-bot/whatsapp-worker dev",
+    "whatsapp:start": "pnpm --filter @whatsapp-bot/whatsapp-worker start",
     "whatsapp:test": "pnpm --filter @whatsapp-bot/whatsapp-worker test",
     "whatsapp:contracts": "pnpm --filter @whatsapp-bot/shared-contracts build",
     "orchestration:test": "pytest apps/trading-service/tests/orchestration",
