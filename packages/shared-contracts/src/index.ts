@@ -270,3 +270,81 @@ export const DomainEventSchema = z.object({
   payload: z.record(z.any())
 });
 export type DomainEvent = z.infer<typeof DomainEventSchema>;
+
+// Phase 11 Reconciliation, Health Incidents & Recovery Schemas
+export const ReconciliationItemSchema = z.object({
+  id: z.string(),
+  reconciliation_run_id: z.string(),
+  entity_type: z.string(),
+  classification: z.string(),
+  ticket: z.number().int().nullable().optional(),
+  magic_number: z.number().int().nullable().optional(),
+  campaign_id: z.string().nullable().optional(),
+  planned_entry_id: z.string().nullable().optional(),
+  job_id: z.string().nullable().optional(),
+  local_snapshot: z.record(z.any()).nullable().optional(),
+  broker_snapshot: z.record(z.any()).nullable().optional(),
+  differences: z.array(z.record(z.any())),
+  requires_review: z.boolean(),
+  resolution_status: z.string(),
+  resolution_action: z.string().nullable().optional(),
+  resolved_by: z.string().nullable().optional(),
+  resolved_at: z.string().nullable().optional(),
+  created_at: z.string()
+});
+export type ReconciliationItem = z.infer<typeof ReconciliationItemSchema>;
+
+export const ReconciliationRunSchema = z.object({
+  id: z.string(),
+  reconciliation_version: z.string().default("1.0.0"),
+  trigger_type: z.string().default("MANUAL"),
+  scope: z.string().default("ALL"),
+  campaign_id: z.string().nullable().optional(),
+  correlation_id: z.string(),
+  actor: z.string().default("SYSTEM"),
+  status: z.string(),
+  broker_symbol: z.string().nullable().optional(),
+  local_order_count: z.number().int().default(0),
+  local_position_count: z.number().int().default(0),
+  broker_order_count: z.number().int().default(0),
+  broker_position_count: z.number().int().default(0),
+  matched_count: z.number().int().default(0),
+  mismatch_count: z.number().int().default(0),
+  requires_review_count: z.number().int().default(0),
+  snapshot_summary: z.record(z.any()),
+  error_message: z.string().nullable().optional(),
+  started_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+  items: z.array(ReconciliationItemSchema).default([])
+});
+export type ReconciliationRun = z.infer<typeof ReconciliationRunSchema>;
+
+export const HealthIncidentSchema = z.object({
+  id: z.string(),
+  incident_kind: z.string(),
+  severity: z.string().default("WARNING"),
+  status: z.string().default("OPEN"),
+  title: z.string(),
+  detail: z.record(z.any()),
+  occurrence_count: z.number().int().default(1),
+  first_seen_at: z.string(),
+  last_seen_at: z.string(),
+  acknowledged_at: z.string().nullable().optional(),
+  acknowledged_by: z.string().nullable().optional(),
+  resolved_at: z.string().nullable().optional()
+});
+export type HealthIncident = z.infer<typeof HealthIncidentSchema>;
+
+export const StartupRecoveryResultSchema = z.object({
+  database_integrity: z.string().default("OK"),
+  foreign_keys: z.string().default("ENABLED"),
+  wal_mode: z.string().default("WAL"),
+  control_state: z.record(z.any()),
+  recovered_orchestration_runs_count: z.number().int().default(0),
+  recovered_outbox_rows_count: z.number().int().default(0),
+  recovered_execution_jobs_count: z.number().int().default(0),
+  recovered_spool_files_count: z.number().int().default(0),
+  recovery_actions: z.array(z.record(z.any())).default([]),
+  recovery_completed_at: z.string()
+});
+export type StartupRecoveryResult = z.infer<typeof StartupRecoveryResultSchema>;

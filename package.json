@@ -28,7 +28,13 @@
     "orchestration:migrations": "python apps/trading-service/alembic/run.py upgrade head",
     "events:test": "pytest apps/trading-service/tests/events",
     "events:benchmark": "pytest -s apps/trading-service/tests/orchestration/test_orchestration_benchmarks.py",
-    "e2e:fake": "pytest apps/trading-service/tests/test_e2e_fake.py"
+    "e2e:fake": "pytest apps/trading-service/tests/test_e2e_fake.py",
+    "reconciliation:test": "pytest apps/trading-service/tests/reconciliation",
+    "recovery:test": "pytest apps/trading-service/tests/recovery",
+    "reliability:test": "pytest apps/trading-service/tests/reliability",
+    "security:audit": "pnpm audit",
+    "release:validate": "powershell -ExecutionPolicy Bypass -File ./scripts/validate.ps1",
+    "release:build": "pnpm desktop:tauri:build"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

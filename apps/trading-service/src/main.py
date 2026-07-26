@@ -900,3 +900,61 @@ def list_execution_batches(limit: int = Query(50, ge=1, le=500)):
     finally:
         db.close()
 
+
+# Reconciliation & Recovery Services
+from src.reconciliation.service import MT5ReconciliationService
+from src.recovery.incidents import HealthIncidentManager
+from src.recovery.startup import StartupRecoveryManager
+
+recon_service = MT5ReconciliationService(session_factory=SessionLocal, adapter=mt5_service.adapter)
+incident_manager = HealthIncidentManager(session_factory=SessionLocal)
+recovery_manager = StartupRecoveryManager(session_factory=SessionLocal)
+
+# Reconciliation Endpoints
+@app.get("/api/v1/reconciliation/runs")
+def list_reconciliation_runs(limit: int = Query(50, ge=1, le=500)):
+    runs = recon_service.get_runs(limit=limit)
+    return [r.model_dump(mode="json") for r in runs]
+
+@app.post("/api/v1/reconciliation/run")
+def trigger_reconciliation(
+    scope: str = Query("ALL"),
+    campaign_id: Optional[str] = Query(None),
+    auth: None = Depends(verify_local_token)
+):
+    run_dto = recon_service.run_reconciliation(trigger_type="MANUAL", scope=scope, campaign_id=campaign_id)
+    return run_dto.model_dump(mode="json")
+
+# Health Incidents Endpoints
+@app.get("/api/v1/incidents")
+def list_health_incidents(status: Optional[str] = Query(None), limit: int = Query(50, ge=1, le=500)):
+    incidents = incident_manager.list_incidents(status=status, limit=limit)
+    return [i.model_dump(mode="json") for i in incidents]
+
+@app.post("/api/v1/incidents/{incident_id}/ack")
+def acknowledge_health_incident(incident_id: str, auth: None = Depends(verify_local_token)):
+    try:
+        inc = incident_manager.acknowledge_incident(incident_id=incident_id)
+        return inc.model_dump(mode="json")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/api/v1/incidents/{incident_id}/resolve")
+def resolve_health_incident(incident_id: str, auth: None = Depends(verify_local_token)):
+    try:
+        inc = incident_manager.resolve_incident(incident_id=incident_id)
+        return inc.model_dump(mode="json")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+# Startup Recovery Endpoints
+@app.get("/api/v1/recovery/status")
+def get_recovery_status():
+    res = recovery_manager.run_startup_recovery()
+    return res.model_dump(mode="json")
+
+@app.post("/api/v1/recovery/run")
+def trigger_startup_recovery(auth: None = Depends(verify_local_token)):
+    res = recovery_manager.run_startup_recovery()
+    return res.model_dump(mode="json")
+
