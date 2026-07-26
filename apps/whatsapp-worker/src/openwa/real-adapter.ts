@@ -45,7 +45,14 @@ export class RealOpenWAAdapter implements OpenWAAdapterInterface {
         qrLogSkip: false,
         authTimeout: 120,
         blockCrashLogs: true,
-        disableSpins: false,
+        disableSpins: true,
+        killProcessOnBrowserClose: false,
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        chromiumArgs: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        ],
         sessionDataPath: this.sessionDir,
         qrCallback: (base64Qr: string, asciiQR: string) => {
           this.qrState = QrState.AVAILABLE;
