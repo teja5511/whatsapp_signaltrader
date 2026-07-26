@@ -39,8 +39,23 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
       const { state, saveCreds } = await useMultiFileAuthState(authPath);
       const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
-      // Disable verbose pino logging
-      const logger = require("pino")({ level: "silent" });
+      // Disable verbose pino logging with silent fallback logger
+      let logger: any;
+      try {
+        logger = require("pino")({ level: "silent" });
+      } catch {
+        const dummyFn = () => {};
+        logger = {
+          level: "silent",
+          child: () => logger,
+          trace: dummyFn,
+          debug: dummyFn,
+          info: dummyFn,
+          warn: dummyFn,
+          error: dummyFn,
+          fatal: dummyFn
+        };
+      }
 
       this.sock = makeWASocket({
         version,
