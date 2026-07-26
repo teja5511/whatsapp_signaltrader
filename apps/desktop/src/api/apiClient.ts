@@ -194,6 +194,22 @@ export class ApiClient {
     return this.request<any>("/api/v1/whatsapp/session/reset", "POST", { confirmation_phrase: phrase }, "worker");
   }
 
+  async listWhatsAppGroups(): Promise<any[]> {
+    return this.request<any[]>("/groups", "GET", undefined, "worker");
+  }
+
+  async setWhatsAppGroup(groupId: string, groupDisplayName?: string): Promise<any> {
+    return this.request<any>("/configuration/group", "POST", { approved_group_id: groupId, approved_group_display_name: groupDisplayName }, "worker");
+  }
+
+  async setWhatsAppAdmin(adminId: string, adminDisplayName?: string): Promise<any> {
+    return this.request<any>("/configuration/admin", "POST", { approved_admin_id: adminId, approved_admin_display_name: adminDisplayName }, "worker");
+  }
+
+  async getWhatsAppConfiguration(): Promise<any> {
+    return this.request<any>("/configuration", "GET", undefined, "worker");
+  }
+
   // Realtime Ticket & Event Replay
   async createEventTicket(): Promise<{ ticket: string; expires_in_seconds: number }> {
     return this.request<{ ticket: string; expires_in_seconds: number }>("/api/v1/events/ticket", "POST");
