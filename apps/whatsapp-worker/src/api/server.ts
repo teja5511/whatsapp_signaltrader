@@ -96,6 +96,15 @@ export function createWorkerApiServer(
         return sendJson(200, groups);
       }
 
+      if (method === "POST" && pathname === "/groups/resolve-link") {
+        const body = await parseBody();
+        if (!body.invite_link) return sendJson(422, { error: "invite_link is required." });
+        if (!adapter.getGroupFromInviteLink) return sendJson(400, { error: "Invite link resolution not supported in current mode." });
+        const summary = await adapter.getGroupFromInviteLink(body.invite_link);
+        if (!summary) return sendJson(404, { error: "Failed to resolve WhatsApp group from invite link." });
+        return sendJson(200, summary);
+      }
+
       if (method === "GET" && pathname === "/configuration") {
         return sendJson(200, {
           adapter_mode: config.adapterMode,

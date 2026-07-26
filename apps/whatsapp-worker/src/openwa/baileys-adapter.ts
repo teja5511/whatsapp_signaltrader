@@ -212,6 +212,31 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
     return Array.from(this.knownGroups.values());
   }
 
+  async getGroupFromInviteLink(linkOrCode: string): Promise<GroupSummary | null> {
+    if (!this.sock) return null;
+    try {
+      const code = linkOrCode.replace("https://chat.whatsapp.com/", "").replace("http://chat.whatsapp.com/", "").trim();
+      const info = await this.sock.groupGetInviteInfo(code);
+      if (info && info.id) {
+        const summary: GroupSummary = {
+          group_id: info.id,
+          display_name: info.subject || "WhatsApp Group",
+          participant_count: info.size || info.participants?.length || 0,
+          is_read_only: Boolean(info.announce),
+          is_community: Boolean(info.isCommunity),
+          is_announcement: Boolean(info.announce),
+          is_archived: false
+        };
+        this.knownGroups.set(info.id, summary);
+        return summary;
+      }
+      return null;
+    } catch (err) {
+      console.error("[Baileys getGroupFromInviteLink Error]", err);
+      return null;
+    }
+  }
+
   async getGroupAdmins(groupId: string): Promise<GroupAdminSummary[]> {
     if (!this.sock) return [];
     try {

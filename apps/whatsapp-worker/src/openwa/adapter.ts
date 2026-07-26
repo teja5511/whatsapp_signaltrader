@@ -9,6 +9,7 @@ export interface OpenWAAdapterInterface {
   initialize(): Promise<boolean>;
   shutdown(): Promise<void>;
   listGroups(): Promise<GroupSummary[]>;
+  getGroupFromInviteLink?(linkOrCode: string): Promise<GroupSummary | null>;
   getGroupAdmins(groupId: string): Promise<GroupAdminSummary[]>;
   onMessage(callback: (msg: any) => void): void;
   logout(): Promise<void>;

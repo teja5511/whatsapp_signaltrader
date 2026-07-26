@@ -6,13 +6,16 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { useUiStore } from "../../stores/uiStore";
 import { CONTROL_PHRASES } from "../../lib/constants";
-import { MessageSquare, RefreshCw, Shield, AlertTriangle, Users, Check, Save } from "lucide-react";
+import { MessageSquare, RefreshCw, Shield, Users, Check, Save, Link as LinkIcon, Search } from "lucide-react";
 
 export const WhatsAppPage: React.FC = () => {
   const { openConfirmModal } = useUiStore();
   const [groupInput, setGroupInput] = useState("");
   const [adminInput, setAdminInput] = useState("");
+  const [inviteLinkInput, setInviteLinkInput] = useState("");
+  const [isResolvingLink, setIsResolvingLink] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const { data: status, refetch: refetchStatus } = useQuery({
     queryKey: ["waStatus"],
@@ -53,6 +56,7 @@ export const WhatsAppPage: React.FC = () => {
 
   const handleSaveAllowlist = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg(null);
     if (groupInput.trim()) {
       await apiClient.setWhatsAppGroup(groupInput.trim());
     }
@@ -65,11 +69,37 @@ export const WhatsAppPage: React.FC = () => {
   };
 
   const handleSelectGroup = async (groupId: string, displayName: string) => {
+    setErrorMsg(null);
     setGroupInput(groupId);
     await apiClient.setWhatsAppGroup(groupId, displayName);
     setSaveSuccessMsg(`Approved group set to: ${displayName} (${groupId})`);
     refetchConfig();
     setTimeout(() => setSaveSuccessMsg(null), 4000);
+  };
+
+  const handleResolveInviteLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteLinkInput.trim()) return;
+    setIsResolvingLink(true);
+    setErrorMsg(null);
+    try {
+      const summary = await apiClient.resolveGroupInviteLink(inviteLinkInput.trim());
+      if (summary && summary.group_id) {
+        await apiClient.setWhatsAppGroup(summary.group_id, summary.display_name);
+        setGroupInput(summary.group_id);
+        setSaveSuccessMsg(`Resolved & Set Group: ${summary.display_name} (${summary.group_id})`);
+        setInviteLinkInput("");
+        refetchConfig();
+        refetchGroups();
+        setTimeout(() => setSaveSuccessMsg(null), 4000);
+      } else {
+        setErrorMsg("Could not find WhatsApp group for that invite link. Ensure worker is connected.");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to resolve WhatsApp group invite link.");
+    } finally {
+      setIsResolvingLink(false);
+    }
   };
 
   const currentGroup = groupInput || config?.approved_group_id || "Not Configured";
@@ -80,7 +110,7 @@ export const WhatsAppPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold font-mono text-slate-100">WhatsApp Setup & Group Configuration</h1>
-          <p className="text-xs text-slate-400 mt-1">Manage single WhatsApp account connection, scan groups, and configure target signal allowlist.</p>
+          <p className="text-xs text-slate-400 mt-1">Manage single WhatsApp account connection, scan groups, or paste a group invite link.</p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => { refetchStatus(); refetchConfig(); }} className="gap-2 font-mono">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh Status
@@ -90,6 +120,12 @@ export const WhatsAppPage: React.FC = () => {
       {saveSuccessMsg && (
         <div className="p-3 rounded bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 text-xs font-mono flex items-center gap-2">
           <Check className="w-4 h-4" /> {saveSuccessMsg}
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="p-3 rounded bg-rose-950/80 border border-rose-700/80 text-rose-300 text-xs font-mono flex items-center gap-2">
+          {errorMsg}
         </div>
       )}
 
@@ -172,12 +208,36 @@ export const WhatsAppPage: React.FC = () => {
         </Card>
       </div>
 
-      {/* Fetch & Scan WhatsApp Groups */}
+      {/* Option A: Resolve Group Invite Link */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-amber-400 flex items-center gap-2">
+            <LinkIcon className="w-4 h-4" /> Option A: Paste Group Invite Link
+          </CardTitle>
+          <CardDescription>Paste your WhatsApp group invite link (e.g. https://chat.whatsapp.com/...) to automatically resolve the Group ID.</CardDescription>
+        </CardHeader>
+
+        <form onSubmit={handleResolveInviteLink} className="flex flex-col sm:flex-row gap-3 pt-2 font-mono text-xs">
+          <input
+            type="text"
+            value={inviteLinkInput}
+            onChange={(e) => setInviteLinkInput(e.target.value)}
+            placeholder="https://chat.whatsapp.com/AbCdEfGhIjK123456"
+            className="flex-1 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+          />
+          <Button type="submit" variant="warning" size="sm" disabled={isResolvingLink || !inviteLinkInput.trim()} className="gap-2">
+            <Search className={`w-3.5 h-3.5 ${isResolvingLink ? "animate-spin" : ""}`} />
+            {isResolvingLink ? "Resolving..." : "Resolve & Set Group"}
+          </Button>
+        </form>
+      </Card>
+
+      {/* Option B: Fetch Connected WhatsApp Groups */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-sky-400 flex items-center gap-2">
-              <Users className="w-4 h-4" /> Scan Connected WhatsApp Groups
+              <Users className="w-4 h-4" /> Option B: Scan Connected WhatsApp Groups
             </CardTitle>
             <CardDescription>Fetch live groups from your linked WhatsApp account to auto-select your target group ID.</CardDescription>
           </div>
@@ -223,7 +283,7 @@ export const WhatsAppPage: React.FC = () => {
           <div className="p-6 text-center text-xs font-mono text-slate-400 bg-slate-950/40 rounded-lg border border-dashed border-slate-800">
             {isFetchingGroups
               ? "Scanning connected WhatsApp groups..."
-              : "Click 'Fetch My Groups' above to retrieve your WhatsApp group list and auto-fill your Group JID."}
+              : "Click 'Fetch My Groups' above or paste your Group Invite Link in Option A."}
           </div>
         )}
       </Card>

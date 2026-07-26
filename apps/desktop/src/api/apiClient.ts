@@ -198,6 +198,10 @@ export class ApiClient {
     return this.request<any[]>("/groups", "GET", undefined, "worker");
   }
 
+  async resolveGroupInviteLink(inviteLink: string): Promise<any> {
+    return this.request<any>("/groups/resolve-link", "POST", { invite_link: inviteLink }, "worker");
+  }
+
   async setWhatsAppGroup(groupId: string, groupDisplayName?: string): Promise<any> {
     return this.request<any>("/configuration/group", "POST", { approved_group_id: groupId, approved_group_display_name: groupDisplayName }, "worker");
   }
