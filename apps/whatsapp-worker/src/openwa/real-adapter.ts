@@ -38,16 +38,30 @@ export class RealOpenWAAdapter implements OpenWAAdapterInterface {
         sessionId: this.sessionName,
         multiDevice: true,
         useChrome: true,
-        authTimeout: 60,
-        blockCrashLogs: true,
-        disableSpins: true,
-        headless: true,
-        qrTimeout: 0,
+        headless: false,
+        popup: true,
+        qrTimeout: 120,
         qrRefreshS: 15,
+        qrLogSkip: false,
+        authTimeout: 120,
+        blockCrashLogs: true,
+        disableSpins: false,
         sessionDataPath: this.sessionDir,
-        qrCallback: (qr: string) => {
+        qrCallback: (base64Qr: string, asciiQR: string) => {
           this.qrState = QrState.AVAILABLE;
-          if (this.qrCallback) this.qrCallback(qr);
+          console.log("\n=================== SCAN WHATSAPP QR CODE ===================");
+          if (asciiQR) {
+            console.log(asciiQR);
+          } else {
+            try {
+              const qrcode = require("qrcode-terminal");
+              qrcode.generate(base64Qr, { small: true });
+            } catch {
+              console.log("QR String:", base64Qr);
+            }
+          }
+          console.log("=============================================================\n");
+          if (this.qrCallback) this.qrCallback(base64Qr);
         }
       });
 
