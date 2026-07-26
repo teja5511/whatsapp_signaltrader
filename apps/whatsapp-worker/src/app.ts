@@ -29,6 +29,14 @@ export class WhatsAppWorkerApp {
     this.paths.sessionsDir,
     (qrPayload) => {
       globalWorkerState.setQrState(QrState.AVAILABLE, qrPayload, this.config.qrTtlSeconds);
+      console.log("\n================ WHATSAPP QR CODE REQUIRED ================");
+      try {
+        const qrcode = require("qrcode-terminal");
+        qrcode.generate(qrPayload, { small: true });
+      } catch {
+        console.log("QR Code Payload:", qrPayload);
+      }
+      console.log("===========================================================\n");
     }
   );
 

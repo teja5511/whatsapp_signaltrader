@@ -19,15 +19,21 @@ export class RealOpenWAAdapter implements OpenWAAdapterInterface {
   async initialize(): Promise<boolean> {
     try {
       this.connectionState = ConnectionState.STARTING;
+      console.log("[WhatsApp Worker] Initializing Real WhatsApp Web Connection...");
       let wa: any;
       try {
         wa = require("@open-wa/wa-automate");
       } catch {
         this.connectionState = ConnectionState.ERROR;
-        throw new Error("Package '@open-wa/wa-automate' is not installed in workspace.");
+        console.error("\n❌ [@open-wa/wa-automate is not installed]");
+        console.error("To use real WhatsApp web automation with QR code, run:\n");
+        console.error("  pnpm --filter @whatsapp-bot/whatsapp-worker add @open-wa/wa-automate qrcode-terminal\n");
+        console.error("Otherwise, keep WHATSAPP_ADAPTER_MODE=fake for simulation mode.\n");
+        return false;
       }
 
       this.connectionState = ConnectionState.WAITING_FOR_QR;
+      console.log("[WhatsApp Worker] Creating WA Automate client session...");
       this.client = await wa.create({
         sessionId: this.sessionName,
         multiDevice: true,
