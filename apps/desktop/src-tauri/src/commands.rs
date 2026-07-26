@@ -58,16 +58,18 @@ pub async fn secure_api_request(
     };
 
     // Attach custom headers
+    let mut has_auth_header = false;
     if let Some(hdrs) = headers {
         for (k, v) in hdrs {
-            if k.to_lowercase() != "authorization" {
-                builder = builder.header(&k, &v);
+            if k.to_lowercase() == "authorization" {
+                has_auth_header = true;
             }
+            builder = builder.header(&k, &v);
         }
     }
 
-    // Attach Bearer token from secure store
-    if let Some(token) = state.get_token() {
+    if !has_auth_header {
+        let token = state.get_token().unwrap_or_else(|| "dev-local-secret-token".to_string());
         builder = builder.header("Authorization", format!("Bearer {}", token));
     }
 

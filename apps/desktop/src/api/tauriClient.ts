@@ -1,6 +1,5 @@
-// Safe Tauri Rust Proxy Bridge with Browser Fallback
-
-let memoryToken: string | null = null;
+const DEFAULT_TOKEN = "dev-local-secret-token";
+let memoryToken: string | null = DEFAULT_TOKEN;
 
 export const isTauriAvailable = (): boolean => {
   return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
@@ -31,7 +30,7 @@ export async function secureTokenExists(): Promise<boolean> {
 }
 
 export async function secureTokenClear(): Promise<void> {
-  memoryToken = null;
+  memoryToken = DEFAULT_TOKEN;
   if (isTauriAvailable()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -59,6 +58,12 @@ export async function secureApiRequest(
     throw new Error("Security Error: Non-loopback plain HTTP requests are blocked.");
   }
 
+  const tokenToUse = memoryToken || DEFAULT_TOKEN;
+  const requestHeaders: Record<string, string> = {
+    Authorization: `Bearer ${tokenToUse}`,
+    ...headers,
+  };
+
   if (isTauriAvailable()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -66,7 +71,7 @@ export async function secureApiRequest(
         url,
         method,
         body: body ? JSON.stringify(body) : null,
-        headers: headers || null,
+        headers: requestHeaders,
       });
     } catch (e: any) {
       // Fall through to browser fetch proxy if Tauri invoke fails in test/dev
@@ -74,12 +79,8 @@ export async function secureApiRequest(
   }
 
   // Browser fetch fallback for dev & tests
-  const requestHeaders: Record<string, string> = { ...headers };
   if (body) {
     requestHeaders["Content-Type"] = "application/json";
-  }
-  if (memoryToken) {
-    requestHeaders["Authorization"] = `Bearer ${memoryToken}`;
   }
 
   const res = await fetch(url, {

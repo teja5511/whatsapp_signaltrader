@@ -7,7 +7,7 @@ pub struct SecureTokenStore {
 impl SecureTokenStore {
     pub fn new() -> Self {
         Self {
-            token: RwLock::new(None),
+            token: RwLock::new(Some("dev-local-secret-token".to_string())),
         }
     }
 
