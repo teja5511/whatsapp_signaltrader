@@ -141,19 +141,26 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
   }
 
   async listGroups(): Promise<GroupSummary[]> {
-    if (!this.sock) return [];
+    if (!this.sock) {
+      console.log("[Baileys Worker] Cannot list groups: Socket not connected yet.");
+      return [];
+    }
     try {
+      console.log("[Baileys Worker] Querying participating WhatsApp groups...");
       const chats = await this.sock.groupFetchAllParticipating();
-      return Object.values(chats).map((c: any) => ({
+      const groupList = Object.values(chats).map((c: any) => ({
         group_id: c.id,
-        display_name: c.subject || "Group",
+        display_name: c.subject || c.name || "WhatsApp Group",
         participant_count: c.participants?.length || 0,
         is_read_only: Boolean(c.announce),
         is_community: Boolean(c.isCommunity),
         is_announcement: Boolean(c.announce),
         is_archived: false
       }));
-    } catch {
+      console.log(`[Baileys Worker] Successfully fetched ${groupList.length} groups.`);
+      return groupList;
+    } catch (err) {
+      console.error("[Baileys listGroups Error]", err);
       return [];
     }
   }

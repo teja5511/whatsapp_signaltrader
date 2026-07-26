@@ -91,6 +91,21 @@ export function createWorkerApiServer(
         });
       }
 
+      if (method === "GET" && pathname === "/groups") {
+        const groups = await adapter.listGroups();
+        return sendJson(200, groups);
+      }
+
+      if (method === "GET" && pathname === "/configuration") {
+        return sendJson(200, {
+          adapter_mode: config.adapterMode,
+          approved_group_id: globalWorkerState.approvedGroupId,
+          approved_admin_id: globalWorkerState.approvedAdminId,
+          require_admin_role: config.requireAdminRole,
+          trading_service_url: config.tradingServiceUrl
+        });
+      }
+
       // Authenticated Read & Mutating Endpoints
       if (!requireAuth()) return;
 
