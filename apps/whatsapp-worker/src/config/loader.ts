@@ -48,8 +48,8 @@ export function loadWorkerConfig(overrideEnv: Record<string, string | undefined>
     realConnectionEnabled: env.WHATSAPP_REAL_CONNECTION_ENABLED ? env.WHATSAPP_REAL_CONNECTION_ENABLED.toLowerCase() === "true" : false,
     sessionName: env.WHATSAPP_SESSION_NAME || "xauusd-bot",
     dataDir: env.WHATSAPP_DATA_DIR || paths.dataDir,
-    approvedGroupId: env.WHATSAPP_APPROVED_GROUP_ID || localConfig.approved_group_id,
-    approvedAdminId: env.WHATSAPP_APPROVED_ADMIN_ID || localConfig.approved_admin_id,
+    approvedGroupId: localConfig.approved_group_id || env.WHATSAPP_APPROVED_GROUP_ID || env.APPROVED_GROUP_JID,
+    approvedAdminId: localConfig.approved_admin_id || env.WHATSAPP_APPROVED_ADMIN_ID || env.APPROVED_ADMIN_JID,
     requireAdminRole: env.WHATSAPP_REQUIRE_ADMIN_ROLE ? env.WHATSAPP_REQUIRE_ADMIN_ROLE.toLowerCase() === "true" : true,
     deliveryConcurrency: env.WHATSAPP_DELIVERY_CONCURRENCY ? parseInt(env.WHATSAPP_DELIVERY_CONCURRENCY, 10) : 1,
     deliveryTimeoutMs: env.WHATSAPP_DELIVERY_TIMEOUT_MS ? parseInt(env.WHATSAPP_DELIVERY_TIMEOUT_MS, 10) : 10000,
@@ -73,4 +73,27 @@ export function saveLocalConfig(localConfig: LocalPersistedConfig, baseDataDir?:
     fs.mkdirSync(paths.configDir, { recursive: true });
   }
   fs.writeFileSync(paths.localConfigFile, JSON.stringify(localConfig, null, 2), "utf-8");
+
+  // Also persist to root .env file if available
+  try {
+    const rootEnvPath = path.resolve(process.cwd(), ".env");
+    let envContent = fs.existsSync(rootEnvPath) ? fs.readFileSync(rootEnvPath, "utf-8") : "";
+    if (localConfig.approved_group_id) {
+      const gRegex = /^APPROVED_GROUP_JID=.*$/m;
+      if (gRegex.test(envContent)) {
+        envContent = envContent.replace(gRegex, `APPROVED_GROUP_JID=${localConfig.approved_group_id}`);
+      } else {
+        envContent += `\nAPPROVED_GROUP_JID=${localConfig.approved_group_id}`;
+      }
+    }
+    if (localConfig.approved_admin_id) {
+      const aRegex = /^APPROVED_ADMIN_JID=.*$/m;
+      if (aRegex.test(envContent)) {
+        envContent = envContent.replace(aRegex, `APPROVED_ADMIN_JID=${localConfig.approved_admin_id}`);
+      } else {
+        envContent += `\nAPPROVED_ADMIN_JID=${localConfig.approved_admin_id}`;
+      }
+    }
+    fs.writeFileSync(rootEnvPath, envContent, "utf-8");
+  } catch {}
 }

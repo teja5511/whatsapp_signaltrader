@@ -13,7 +13,11 @@ export const ConfirmDialog: React.FC = () => {
 
   const { title, description, phrase, action } = activeConfirmModal;
 
-  const isMatched = typedPhrase.trim() === phrase;
+  const isMatched = typedPhrase.trim().toLowerCase() === (phrase || "").toLowerCase();
+
+  const handleAutoFill = () => {
+    if (phrase) setTypedPhrase(phrase);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +44,7 @@ export const ConfirmDialog: React.FC = () => {
             <AlertTriangle className="w-6 h-6 text-rose-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-100">{title || "Confirm Dangerous Operation"}</h2>
+            <h2 className="text-lg font-bold text-slate-100">{title || "Confirm Operation"}</h2>
             <p className="text-xs text-slate-300 mt-1 leading-relaxed">{description}</p>
           </div>
         </div>
@@ -53,15 +57,24 @@ export const ConfirmDialog: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Type exact phrase to confirm: <span className="text-sky-400 font-bold select-all">{phrase}</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-300">
+                Required phrase: <span className="text-sky-400 font-bold select-all">{phrase}</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleAutoFill}
+                className="text-[11px] text-sky-400 hover:text-sky-300 underline font-semibold cursor-pointer"
+              >
+                Auto-Fill Phrase
+              </button>
+            </div>
             <input
               type="text"
               value={typedPhrase}
               onChange={(e) => setTypedPhrase(e.target.value)}
-              placeholder={phrase}
-              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono tracking-wide"
+              placeholder={`Type "${phrase}" or click Auto-Fill above...`}
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono tracking-wide"
               autoFocus
             />
           </div>
@@ -72,7 +85,7 @@ export const ConfirmDialog: React.FC = () => {
             </Button>
             <Button
               type="submit"
-              variant="danger"
+              variant="primary"
               disabled={!isMatched || loading}
             >
               {loading ? "Executing..." : "Confirm & Execute"}
