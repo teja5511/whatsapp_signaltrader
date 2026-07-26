@@ -1,6 +1,6 @@
 import { OpenWAAdapterInterface } from "./adapter";
 import { FakeOpenWAAdapter } from "./fake-adapter";
-import { RealOpenWAAdapter } from "./real-adapter";
+import { BaileysOpenWAAdapter } from "./baileys-adapter";
 import { MODE_REAL } from "../constants";
 
 export function createOpenWAAdapter(
@@ -10,7 +10,7 @@ export function createOpenWAAdapter(
   qrCallback?: (qrPayload: string) => void
 ): OpenWAAdapterInterface {
   if (mode === MODE_REAL) {
-    return new RealOpenWAAdapter(sessionName, sessionDir, qrCallback);
+    return new BaileysOpenWAAdapter(sessionName, sessionDir, qrCallback);
   }
   return new FakeOpenWAAdapter();
 }
