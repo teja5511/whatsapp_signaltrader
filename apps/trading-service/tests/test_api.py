@@ -25,3 +25,27 @@ def test_get_audit_logs_endpoint():
     response = client.get("/api/v1/audit-logs")
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+def test_cors_options_preflight_system_status():
+    response = client.options(
+        "/api/v1/system/status",
+        headers={
+            "Origin": "http://localhost:1420",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        }
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:1420"
+    assert "GET" in response.headers.get("access-control-allow-methods", "")
+
+def test_cors_options_preflight_tauri_origin():
+    response = client.options(
+        "/api/v1/system/status",
+        headers={
+            "Origin": "tauri://localhost",
+            "Access-Control-Request-Method": "GET",
+        }
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "tauri://localhost"

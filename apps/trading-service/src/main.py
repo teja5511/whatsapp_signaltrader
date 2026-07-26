@@ -45,10 +45,29 @@ from src.events import (
 # Initialize Database Schema
 Base.metadata.create_all(bind=engine)
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="WhatsApp-to-MT5 XAUUSD Trading Service",
     version="1.0.0",
     description="Central FastAPI orchestration layer executing WhatsApp signal ingestion, parser, campaign state machine, entry planner, demo MT5 execution worker, and real-time events."
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "tauri://localhost",
+        "https://tauri.localhost",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # Initialize Services
