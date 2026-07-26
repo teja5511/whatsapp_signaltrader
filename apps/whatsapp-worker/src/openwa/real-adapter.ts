@@ -37,6 +37,7 @@ export class RealOpenWAAdapter implements OpenWAAdapterInterface {
       this.client = await wa.create({
         sessionId: this.sessionName,
         multiDevice: true,
+        useChrome: true,
         authTimeout: 60,
         blockCrashLogs: true,
         disableSpins: true,
