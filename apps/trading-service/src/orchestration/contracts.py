@@ -12,6 +12,7 @@ class SystemStatusDTO(BaseModel):
     overall_state: str = "HEALTHY"  # HEALTHY, DEGRADED, BLOCKED, ERROR, STARTING, STOPPED
     automation_state: str = AUTOMATION_PAUSED
     default_execution_mode: str = MODE_CONFIRMATION
+    execution_mode: str = MODE_CONFIRMATION
     trading_enabled: bool = False
     mt5_execution_enabled: bool = False
     mt5_account_environment: str = "DEMO"
@@ -25,6 +26,10 @@ class SystemStatusDTO(BaseModel):
     outbox_pending: int = 0
     latest_event_sequence: int = 0
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    database: Dict[str, Any] = Field(default_factory=lambda: {"connected": True, "backend": "sqlite", "pending_migrations": False})
+    mt5_adapter: Dict[str, Any] = Field(default_factory=lambda: {"initialized": True, "adapter_mode": "DEMO", "health_state": "OK", "account_environment": "DEMO", "login_masked": "*****", "is_live_account": False, "live_blocked": True})
+    whatsapp_worker: Dict[str, Any] = Field(default_factory=lambda: {"connected": True, "worker_enabled": True, "group_configured": True, "admin_configured": True})
+    outbox_queue: Dict[str, Any] = Field(default_factory=lambda: {"pending_events": 0, "delivered_events": 0, "failed_events": 0})
 
 class ControlStateDTO(BaseModel):
     automation_state: str = AUTOMATION_PAUSED
