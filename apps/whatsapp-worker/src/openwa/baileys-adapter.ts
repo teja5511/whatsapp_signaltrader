@@ -16,6 +16,8 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
     private qrCallback?: (qrPayload: string) => void
   ) {}
 
+  private knownGroups = new Map<string, GroupSummary>();
+
   async initialize(): Promise<boolean> {
     try {
       this.connectionState = ConnectionState.STARTING;
@@ -67,7 +69,7 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
 
       this.sock.ev.on("creds.update", saveCreds);
 
-      this.sock.ev.on("connection.update", (update: any) => {
+      this.sock.ev.on("connection.update", async (update: any) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
@@ -82,6 +84,23 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
           this.connectionState = ConnectionState.READY;
           this.qrState = QrState.AUTHENTICATED;
           console.log("\n✅ [WhatsApp Worker] Connected to WhatsApp Web successfully!");
+          
+          // Eagerly pre-fetch groups on connection
+          try {
+            const chats = await this.sock.groupFetchAllParticipating();
+            for (const [id, c] of Object.entries(chats as Record<string, any>)) {
+              this.knownGroups.set(id, {
+                group_id: id,
+                display_name: c.subject || c.name || "WhatsApp Group",
+                participant_count: c.participants?.length || 0,
+                is_read_only: Boolean(c.announce),
+                is_community: Boolean(c.isCommunity),
+                is_announcement: Boolean(c.announce),
+                is_archived: false
+              });
+            }
+            console.log(`[WhatsApp Worker] Pre-loaded ${this.knownGroups.size} participating groups.`);
+          } catch {}
         } else if (connection === "close") {
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const DisconnectReason = baileys.DisconnectReason;
@@ -94,11 +113,42 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
         }
       });
 
+      // Track group events
+      this.sock.ev.on("groups.update", (updates: any[]) => {
+        for (const u of updates) {
+          if (u.id) {
+            const existing = this.knownGroups.get(u.id);
+            this.knownGroups.set(u.id, {
+              group_id: u.id,
+              display_name: u.subject || existing?.display_name || "WhatsApp Group",
+              participant_count: existing?.participant_count || 0,
+              is_read_only: u.announce !== undefined ? Boolean(u.announce) : (existing?.is_read_only || false),
+              is_community: existing?.is_community || false,
+              is_announcement: u.announce !== undefined ? Boolean(u.announce) : (existing?.is_announcement || false),
+              is_archived: false
+            });
+          }
+        }
+      });
+
       this.sock.ev.on("messages.upsert", (m: any) => {
-        if (!this.messageCallback || !m.messages || m.messages.length === 0) return;
+        if (!m.messages || m.messages.length === 0) return;
         for (const rawMsg of m.messages) {
-          if (rawMsg.key.fromMe) continue;
-          
+          const jid = rawMsg.key?.remoteJid;
+          if (jid && jid.endsWith("@g.us") && !this.knownGroups.has(jid)) {
+            this.knownGroups.set(jid, {
+              group_id: jid,
+              display_name: rawMsg.pushName ? `Group (${rawMsg.pushName})` : "WhatsApp Group",
+              participant_count: 0,
+              is_read_only: false,
+              is_community: false,
+              is_announcement: false,
+              is_archived: false
+            });
+          }
+
+          if (rawMsg.key.fromMe || !this.messageCallback) continue;
+
           const text = rawMsg.message?.conversation ||
                        rawMsg.message?.extendedTextMessage?.text ||
                        rawMsg.message?.imageMessage?.caption ||
@@ -106,10 +156,10 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
 
           const normalizedMsg = {
             id: rawMsg.key.id,
-            chatId: rawMsg.key.remoteJid,
-            groupId: rawMsg.key.remoteJid,
+            chatId: jid,
+            groupId: jid,
             sender: {
-              id: rawMsg.key.participant || rawMsg.key.remoteJid,
+              id: rawMsg.key.participant || jid,
               isAdmin: false
             },
             fromMe: Boolean(rawMsg.key.fromMe),
@@ -141,28 +191,25 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
   }
 
   async listGroups(): Promise<GroupSummary[]> {
-    if (!this.sock) {
-      console.log("[Baileys Worker] Cannot list groups: Socket not connected yet.");
-      return [];
+    if (this.sock) {
+      try {
+        const chats = await this.sock.groupFetchAllParticipating();
+        for (const [id, c] of Object.entries(chats as Record<string, any>)) {
+          this.knownGroups.set(id, {
+            group_id: id,
+            display_name: c.subject || c.name || "WhatsApp Group",
+            participant_count: c.participants?.length || 0,
+            is_read_only: Boolean(c.announce),
+            is_community: Boolean(c.isCommunity),
+            is_announcement: Boolean(c.announce),
+            is_archived: false
+          });
+        }
+      } catch (err) {
+        console.log("[Baileys listGroups fallback to knownGroups cache]");
+      }
     }
-    try {
-      console.log("[Baileys Worker] Querying participating WhatsApp groups...");
-      const chats = await this.sock.groupFetchAllParticipating();
-      const groupList = Object.values(chats).map((c: any) => ({
-        group_id: c.id,
-        display_name: c.subject || c.name || "WhatsApp Group",
-        participant_count: c.participants?.length || 0,
-        is_read_only: Boolean(c.announce),
-        is_community: Boolean(c.isCommunity),
-        is_announcement: Boolean(c.announce),
-        is_archived: false
-      }));
-      console.log(`[Baileys Worker] Successfully fetched ${groupList.length} groups.`);
-      return groupList;
-    } catch (err) {
-      console.error("[Baileys listGroups Error]", err);
-      return [];
-    }
+    return Array.from(this.knownGroups.values());
   }
 
   async getGroupAdmins(groupId: string): Promise<GroupAdminSummary[]> {
