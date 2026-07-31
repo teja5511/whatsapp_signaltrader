@@ -38,7 +38,7 @@ export const WhatsAppPage: React.FC = () => {
   const { data: groups, refetch: refetchGroups, isFetching: isFetchingGroups } = useQuery({
     queryKey: ["waGroups"],
     queryFn: () => apiClient.listWhatsAppGroups().catch(() => []),
-    enabled: false,
+    refetchInterval: 5000,
   });
 
   const handleResetSession = () => {
