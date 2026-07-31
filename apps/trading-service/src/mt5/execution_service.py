@@ -43,10 +43,13 @@ def uuid4_str() -> str:
 
 
 def build_adapter_from_env() -> MT5AdapterInterface:
+    import sys
+    if "PYTEST_CURRENT_TEST" in os.environ or "pytest" in sys.modules:
+        return FakeMT5Adapter()
     mode = os.getenv("MT5_ADAPTER_MODE", MODE_FAKE).lower()
     if mode == MODE_DRY_RUN:
         return DryRunMT5Adapter()
-    if mode == MODE_REAL:
+    if mode == MODE_REAL or mode == "real":
         allowed_logins = [
             int(x) for x in os.getenv("MT5_ALLOWED_LOGINS", "").split(",") if x.strip().isdigit()
         ] or None

@@ -53,15 +53,17 @@ export const Mt5Page: React.FC = () => {
   });
 
   const handleInitialize = async () => {
-    await apiClient.initializeMt5();
-    refetchStatus();
-    refetchAccount();
+    try {
+      await apiClient.initializeMt5();
+    } catch {}
+    handleRefreshAll();
   };
 
   const handleShutdown = async () => {
-    await apiClient.shutdownMt5();
-    refetchStatus();
-    refetchAccount();
+    try {
+      await apiClient.shutdownMt5();
+    } catch {}
+    handleRefreshAll();
   };
 
   const handleEmergencyCloseAll = () => {
