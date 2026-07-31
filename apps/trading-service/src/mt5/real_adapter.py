@@ -284,6 +284,13 @@ class RealMT5Adapter(MT5AdapterInterface):
         if not HAS_MT5_PACKAGE or not self._initialized:
             raise MT5InitializeFailedError("Adapter not initialized for order_check.")
 
+        broker_symbol = req.symbol
+        if req.symbol == "XAUUSD":
+            res_sym = self.resolve_symbol("XAUUSD")
+            if res_sym.is_resolved:
+                broker_symbol = res_sym.broker_symbol
+        mt5.symbol_select(broker_symbol, True)
+
         order_type_val = mt5.ORDER_TYPE_BUY_LIMIT if req.order_type == "BUY_LIMIT" else mt5.ORDER_TYPE_SELL_LIMIT
         type_filling = mt5.ORDER_FILLING_RETURN
         if req.filling_type == FILLING_FOK:
@@ -293,7 +300,7 @@ class RealMT5Adapter(MT5AdapterInterface):
 
         request_dict = {
             "action": mt5.TRADE_ACTION_PENDING,
-            "symbol": req.symbol,
+            "symbol": broker_symbol,
             "volume": float(req.volume),
             "type": order_type_val,
             "price": float(req.price),
@@ -353,9 +360,16 @@ class RealMT5Adapter(MT5AdapterInterface):
         elif req.filling_type == FILLING_IOC:
             type_filling = mt5.ORDER_FILLING_IOC
 
+        broker_symbol = req.symbol
+        if req.symbol == "XAUUSD":
+            res_sym = self.resolve_symbol("XAUUSD")
+            if res_sym.is_resolved:
+                broker_symbol = res_sym.broker_symbol
+        mt5.symbol_select(broker_symbol, True)
+
         request_dict = {
             "action": mt5.TRADE_ACTION_PENDING,
-            "symbol": req.symbol,
+            "symbol": broker_symbol,
             "volume": float(req.volume),
             "type": order_type_val,
             "price": float(req.price),
@@ -624,6 +638,7 @@ class RealMT5Adapter(MT5AdapterInterface):
             resolution = self.resolve_symbol()
             if resolution.is_resolved:
                 resolved = resolution.broker_symbol
+        mt5.symbol_select(resolved, True)
         tick = mt5.symbol_info_tick(resolved)
         if tick is None or not getattr(tick, "bid", 0) or not getattr(tick, "ask", 0):
             return None

@@ -445,3 +445,15 @@ class MT5ExecutionService:
                 "remaining_tickets": [p.ticket for p in remaining],
                 "reconciliation_required": bool(unknown or remaining),
             }
+
+    def current_mid_price(self) -> Optional[Decimal]:
+        """Returns the current mid price for XAUUSD from the adapter."""
+        try:
+            if not self.adapter.is_initialized():
+                self.adapter.initialize()
+            tick = self.adapter.symbol_tick("XAUUSD")
+            if tick and tick.bid and tick.ask:
+                return (tick.bid + tick.ask) / Decimal("2")
+        except Exception:
+            pass
+        return None

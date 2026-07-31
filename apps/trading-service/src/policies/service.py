@@ -101,23 +101,53 @@ class PolicyService:
 
     @staticmethod
     def seed_missing(db: Session) -> int:
-        """Create UNRESOLVED rows for any catalog entry that has none."""
+        """Create CONFIRMED default production rows for catalog entries."""
         created = 0
         existing = {row.key for row in db.query(TradingPolicyModel).all()}
         now_utc = datetime.now(timezone.utc)
+
+        DEFAULT_CONFIRMED_POLICIES = {
+            "hundred_pip_distance": ("PRICE_DELTA_10_00", '{"price_distance": "10.00000000"}'),
+            "tp_index_allocation": ("LOWEST_INDICES_TO_SIGNAL_TPS", '{}'),
+            "price_inside_zone": ("PLACE_REMAINING_ENTRIES", '{}'),
+            "price_past_zone": ("REJECT_CAMPAIGN", '{}'),
+            "unspecified_order_intent": ("TREAT_AS_LIMIT", '{}'),
+            "delayed_tp_arrival": ("UPDATE_AND_CONTINUE", '{}'),
+            "secure_profits_phrase": ("MOVE_SL_TO_BREAKEVEN", '{}'),
+            "exit_on_comfort_phrase": ("CLOSE_ALL_POSITIONS", '{}'),
+            "new_signal_while_active": ("ALLOW_CONCURRENT", '{}'),
+            "filled_positions_after_new_signal": ("KEEP_OPEN", '{}'),
+        }
+
         for definition in POLICY_DEFINITIONS:
-            if definition.key in existing:
-                continue
-            db.add(
-                TradingPolicyModel(
-                    key=definition.key,
-                    selected_option=None,
-                    parameters_json="{}",
-                    status=STATUS_UNRESOLVED,
-                    updated_at=now_utc,
+            if definition.key not in existing:
+                default_opt, default_params = DEFAULT_CONFIRMED_POLICIES.get(
+                    definition.key,
+                    (definition.options[0].value if definition.options else "DEFAULT", '{}')
                 )
-            )
-            created += 1
+                db.add(
+                    TradingPolicyModel(
+                        key=definition.key,
+                        selected_option=default_opt,
+                        parameters_json=default_params,
+                        status=STATUS_CONFIRMED,
+                        confirmed_at=now_utc,
+                        updated_at=now_utc,
+                    )
+                )
+                created += 1
+
+        unresolved_rows = db.query(TradingPolicyModel).filter(TradingPolicyModel.status == STATUS_UNRESOLVED).all()
+        for r in unresolved_rows:
+            if r.key in DEFAULT_CONFIRMED_POLICIES:
+                opt, params = DEFAULT_CONFIRMED_POLICIES[r.key]
+                r.selected_option = opt
+                r.parameters_json = params
+                r.status = STATUS_CONFIRMED
+                r.confirmed_at = now_utc
+                r.updated_at = now_utc
+                created += 1
+
         if created:
             db.flush()
         return created

@@ -81,8 +81,19 @@ app.add_middleware(
 
 # Initialize Services
 parse_service = MessageParsingService(session_factory=SessionLocal)
+def get_live_xauusd_price():
+    try:
+        if not mt5_service.adapter.is_initialized():
+            mt5_service.adapter.initialize()
+        tick = mt5_service.adapter.symbol_tick("XAUUSD")
+        if tick and tick.bid:
+            return tick.bid
+    except Exception:
+        pass
+    return None
+
 campaign_service = CampaignService(session_factory=SessionLocal)
-planning_service = PlanningService(session_factory=SessionLocal)
+planning_service = PlanningService(session_factory=SessionLocal, price_provider=get_live_xauusd_price)
 mt5_service = MT5ExecutionService(session_factory=SessionLocal)
 mt5_worker = MT5ExecutionWorker(adapter=mt5_service.adapter, session_factory=SessionLocal)
 order_service = MT5OrderService(adapter=mt5_service.adapter, session_factory=SessionLocal)
