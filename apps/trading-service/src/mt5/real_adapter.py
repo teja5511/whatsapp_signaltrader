@@ -244,12 +244,16 @@ class RealMT5Adapter(MT5AdapterInterface):
         if not HAS_MT5_PACKAGE:
             raise MT5PackageUnavailableError()
 
-        info = mt5.symbol_info(symbol)
+        broker_symbol = symbol
+        if symbol == "XAUUSD":
+            res = self.resolve_symbol("XAUUSD")
+            if res.is_resolved:
+                broker_symbol = res.broker_symbol
+
+        mt5.symbol_select(broker_symbol, True)
+        info = mt5.symbol_info(broker_symbol)
         if info is None:
-            mt5.symbol_select(symbol, True)
-            info = mt5.symbol_info(symbol)
-            if info is None:
-                raise XAUUSDSymbolNotFoundError(f"Symbol '{symbol}' not found on broker.")
+            raise XAUUSDSymbolNotFoundError(f"Symbol '{broker_symbol}' not found on broker.")
 
         # Determine filling mode
         filling_mode = FILLING_RETURN
