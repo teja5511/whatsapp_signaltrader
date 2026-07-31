@@ -373,8 +373,13 @@ class RealMT5Adapter(MT5AdapterInterface):
         )
 
     def orders_get(self, magic_number: Optional[int] = None, ticket: Optional[int] = None) -> List[Mt5OrderSnapshotDTO]:
-        if not HAS_MT5_PACKAGE or not self.is_initialized():
+        if not HAS_MT5_PACKAGE:
             return []
+        if not self._initialized:
+            try:
+                mt5.initialize()
+            except Exception:
+                pass
         orders = mt5.orders_get()
         if orders is None:
             return []
@@ -400,8 +405,13 @@ class RealMT5Adapter(MT5AdapterInterface):
         return res
 
     def positions_get(self, magic_number: Optional[int] = None, ticket: Optional[int] = None) -> List[Mt5PositionSnapshotDTO]:
-        if not HAS_MT5_PACKAGE or not self.is_initialized():
+        if not HAS_MT5_PACKAGE:
             return []
+        if not self._initialized:
+            try:
+                mt5.initialize()
+            except Exception:
+                pass
         positions = mt5.positions_get()
         if positions is None:
             return []

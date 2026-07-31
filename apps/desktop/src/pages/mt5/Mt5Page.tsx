@@ -149,23 +149,28 @@ export const Mt5Page: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <span className="text-[10px] uppercase text-slate-400 block">Terminal IPC Status</span>
-                <span className={`text-xs font-bold ${status?.initialized ? "text-emerald-400" : "text-amber-400"}`}>
-                  {status?.initialized ? "● CONNECTED TO TERMINAL" : "○ DISCONNECTED"}
-                </span>
+          {(() => {
+            const isConnected = Boolean(status?.initialized || status?.account_connected || account?.login);
+            return (
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="text-[10px] uppercase text-slate-400 block">Terminal IPC Status</span>
+                  <span className={`text-xs font-bold ${isConnected ? "text-emerald-400" : "text-amber-400"}`}>
+                    {isConnected ? "● CONNECTED TO TERMINAL" : "○ DISCONNECTED"}
+                  </span>
+                </div>
+                {isConnected ? (
+                  <Button variant="secondary" size="sm" onClick={handleShutdown} className="border-rose-800 text-rose-300 gap-1.5 text-xs">
+                    <Power className="w-3.5 h-3.5" /> Disconnect
+                  </Button>
+                ) : (
+                  <Button variant="primary" size="sm" onClick={handleInitialize} className="gap-1.5 text-xs">
+                    <Power className="w-3.5 h-3.5" /> Connect MT5
+                  </Button>
+                )}
               </div>
-              {status?.initialized ? (
-                <Button variant="secondary" size="sm" onClick={handleShutdown} className="border-rose-800 text-rose-300 gap-1.5 text-xs">
-                  <Power className="w-3.5 h-3.5" /> Disconnect
-                </Button>
-              ) : (
-                <Button variant="primary" size="sm" onClick={handleInitialize} className="gap-1.5 text-xs">
-                  <Power className="w-3.5 h-3.5" /> Connect MT5
-                </Button>
-              )}
-            </div>
+            );
+          })()}
           </div>
 
           {/* Account Portfolio Key Financial Metrics Grid */}
