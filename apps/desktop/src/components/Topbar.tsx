@@ -33,7 +33,7 @@ export const Topbar: React.FC<TopbarProps> = ({
       </div>
 
       {/* Realtime Indicators */}
-      <div className="flex items-center gap-2.5 overflow-x-auto">
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/90 border border-slate-800">
           <span className="text-slate-500 font-semibold">AUTO:</span>
           <Badge status={systemStatus?.automation_state || "PAUSED"} />

@@ -23,9 +23,25 @@ export function createWorkerApiServer(
     const pathname = parsedUrl.pathname;
     const method = (req.method || "GET").toUpperCase();
 
+    // CORS Headers for Browser Dashboard Access
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Correlation-ID");
+
+    if (method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     // Helper for sending JSON
     const sendJson = (statusCode: number, data: any) => {
-      res.writeHead(statusCode, { "Content-Type": "application/json" });
+      res.writeHead(statusCode, { 
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Correlation-ID"
+      });
       res.end(JSON.stringify(data));
     };
 
