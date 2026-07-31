@@ -6,7 +6,11 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { useUiStore } from "../../stores/uiStore";
 import { CONTROL_PHRASES } from "../../lib/constants";
-import { TrendingUp, RefreshCw, Power, Lock, CheckCircle2, DollarSign, Wallet, Layers, AlertOctagon, XCircle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { 
+  TrendingUp, RefreshCw, Power, Lock, CheckCircle2, DollarSign, Wallet, 
+  Layers, AlertOctagon, ArrowUpRight, ArrowDownRight, User, Server, 
+  Building, ShieldCheck, Activity, Scale
+} from "lucide-react";
 
 export const Mt5Page: React.FC = () => {
   const { openConfirmModal } = useUiStore();
@@ -83,143 +87,200 @@ export const Mt5Page: React.FC = () => {
     refetchBatches();
   };
 
-  // Portfolio math calculation
+  // Portfolio & Profit Calculations
   const totalProfit = (positions || []).reduce((acc: number, p: any) => acc + (p.profit || 0), 0);
   const totalVolume = (positions || []).reduce((acc: number, p: any) => acc + (p.volume || 0), 0);
 
+  const balance = account?.balance ? Number(account.balance) : 10000.00;
+  const equity = account?.equity ? Number(account.equity) : (balance + totalProfit);
+  const margin = account?.margin ? Number(account.margin) : 0.00;
+  const freeMargin = account?.margin_free ? Number(account.margin_free) : balance;
+  const marginLevel = margin > 0 ? ((equity / margin) * 100).toFixed(1) + "%" : "100.0%";
+
   return (
     <div className="space-y-6">
+      {/* Top Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold font-mono text-slate-100">MetaTrader 5 Account & Portfolio</h1>
-          <p className="text-xs text-slate-400 mt-1">Live portfolio stats, active trades, pending limit orders, and execution batch queue.</p>
+          <h1 className="text-xl font-bold font-mono text-slate-100">MetaTrader 5 Account & Portfolio Dashboard</h1>
+          <p className="text-xs text-slate-400 mt-1">Live MetaTrader terminal connection, logged-in account portfolio, active trades & order queue.</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="danger" size="sm" onClick={handleEmergencyCloseAll} className="gap-1.5 font-mono">
             <AlertOctagon className="w-3.5 h-3.5" /> Emergency Flatten All
           </Button>
           <Button variant="secondary" size="sm" onClick={handleRefreshAll} className="gap-2 font-mono">
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh All
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh Dashboard
           </Button>
         </div>
       </div>
 
-      {/* Portfolio Quick Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono">
-        <Card className="p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Balance</span>
-            <DollarSign className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-xl font-bold text-slate-100 mt-2">
-            ${(account?.balance || 10000.00).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">Account Deposit</span>
-        </Card>
+      {/* Logged-In MetaTrader Account Banner */}
+      <Card className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border-sky-900/50 shadow-xl">
+        <div className="p-5 font-mono">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-sky-950/80 border border-sky-600/40 flex items-center justify-center shrink-0">
+                <User className="w-6 h-6 text-sky-400" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-100">
+                    {account?.login ? `MT5 Account #${account.login}` : `MT5 Account #${account?.login_masked || "1234****"}`}
+                  </h2>
+                  <Badge 
+                    status={account?.environment_kind || "DEMO"} 
+                    variant={account?.environment_kind === "REAL" ? "red" : "green"} 
+                  />
+                  <span className="px-2 py-0.5 text-[10px] rounded bg-sky-950 text-sky-300 border border-sky-800">
+                    {account?.margin_mode || "HEDGING"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-3">
+                  <span className="flex items-center gap-1">
+                    <Building className="w-3 h-3 text-slate-500" /> {account?.company || "Exness Technologies Ltd"}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Server className="w-3 h-3 text-slate-500" /> {account?.server || "Exness-MT5Trial6"}
+                  </span>
+                </p>
+              </div>
+            </div>
 
-        <Card className="p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Equity</span>
-            <Wallet className="w-4 h-4 text-sky-400" />
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <span className="text-[10px] uppercase text-slate-400 block">Terminal IPC Status</span>
+                <span className={`text-xs font-bold ${status?.initialized ? "text-emerald-400" : "text-amber-400"}`}>
+                  {status?.initialized ? "● CONNECTED TO TERMINAL" : "○ DISCONNECTED"}
+                </span>
+              </div>
+              {status?.initialized ? (
+                <Button variant="secondary" size="sm" onClick={handleShutdown} className="border-rose-800 text-rose-300 gap-1.5 text-xs">
+                  <Power className="w-3.5 h-3.5" /> Disconnect
+                </Button>
+              ) : (
+                <Button variant="primary" size="sm" onClick={handleInitialize} className="gap-1.5 text-xs">
+                  <Power className="w-3.5 h-3.5" /> Connect MT5
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="text-xl font-bold text-sky-400 mt-2">
-            ${(account?.equity || 10000.00).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">Real-time Net Equity</span>
-        </Card>
 
-        <Card className="p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Open Floating P&L</span>
-            <TrendingUp className={`w-4 h-4 ${totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`} />
-          </div>
-          <div className={`text-xl font-bold mt-2 ${totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-            {totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)} USD
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">{positions?.length || 0} active positions</span>
-        </Card>
+          {/* Account Portfolio Key Financial Metrics Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 pt-4 text-xs">
+            <div>
+              <span className="text-slate-400 block text-[11px]">Account Balance</span>
+              <span className="text-base font-bold text-slate-100">
+                ${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Initial Deposit</span>
+            </div>
 
-        <Card className="p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Total Exposure</span>
-            <Layers className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-xl font-bold text-amber-300 mt-2">
-            {totalVolume.toFixed(2)} / 2.00 Lots
-          </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">Max Exposure Limit</span>
-        </Card>
-      </div>
+            <div>
+              <span className="text-slate-400 block text-[11px]">Net Equity</span>
+              <span className="text-base font-bold text-sky-400">
+                ${equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Balance + P&L</span>
+            </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Adapter Status & Controls */}
+            <div>
+              <span className="text-slate-400 block text-[11px]">Margin Used</span>
+              <span className="text-base font-bold text-slate-300">
+                ${margin.toFixed(2)}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Leverage 1:{account?.leverage || 500}</span>
+            </div>
+
+            <div>
+              <span className="text-slate-400 block text-[11px]">Free Margin</span>
+              <span className="text-base font-bold text-emerald-400">
+                ${freeMargin.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Available for trades</span>
+            </div>
+
+            <div>
+              <span className="text-slate-400 block text-[11px]">Margin Level %</span>
+              <span className="text-base font-bold text-indigo-400">
+                {marginLevel}
+              </span>
+              <span className="text-[10px] text-slate-500 block">Health Ratio</span>
+            </div>
+
+            <div>
+              <span className="text-slate-400 block text-[11px]">Floating P&L</span>
+              <span className={`text-base font-bold ${totalProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)}
+              </span>
+              <span className="text-[10px] text-slate-500 block">{positions?.length || 0} open positions</span>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Account Specifications & Safety Parameters */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-mono">
+        {/* Terminal Connection Details */}
         <Card>
           <CardHeader>
             <div>
               <CardTitle className="flex items-center gap-2 text-sky-400">
-                <TrendingUp className="w-4 h-4" /> MT5 IPC Adapter
+                <Activity className="w-4 h-4" /> Terminal Details
               </CardTitle>
-              <CardDescription>Python `MetaTrader5` Binding</CardDescription>
+              <CardDescription>MT5 IPC Process & Path</CardDescription>
             </div>
-            <Badge status={status?.initialized ? "INITIALIZED" : "UNINITIALIZED"} />
+            <Badge status={status?.adapter_mode?.toUpperCase() || "REAL"} variant="blue" />
           </CardHeader>
 
-          <div className="space-y-3 font-mono text-xs border-t border-slate-800 pt-4">
+          <div className="space-y-3 text-xs border-t border-slate-800 pt-4">
             <div className="flex justify-between">
               <span className="text-slate-400">Adapter Mode:</span>
-              <span className="text-slate-200 uppercase font-bold">{status?.adapter_mode || "fake"}</span>
+              <span className="text-slate-200 uppercase font-bold">{status?.adapter_mode || "real"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Health State:</span>
               <span className="text-emerald-400 font-bold">{status?.health_state || "READY"}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Environment:</span>
-              <span className="text-emerald-300 font-bold">DEMO ONLY</span>
+              <span className="text-slate-400">Account Currency:</span>
+              <span className="text-slate-200 font-bold">{account?.currency || "USD"}</span>
             </div>
-          </div>
-
-          <div className="mt-6 flex gap-3 border-t border-slate-800 pt-4">
-            {status?.initialized ? (
-              <Button variant="secondary" size="sm" onClick={handleShutdown} className="w-full gap-2">
-                <Power className="w-4 h-4 text-rose-400" /> Shutdown IPC
-              </Button>
-            ) : (
-              <Button variant="primary" size="sm" onClick={handleInitialize} className="w-full gap-2">
-                <Power className="w-4 h-4 text-emerald-400" /> Initialize IPC
-              </Button>
-            )}
+            <div className="flex justify-between">
+              <span className="text-slate-400">Trade Execution:</span>
+              <span className="text-emerald-300 font-bold">ALLOWED</span>
+            </div>
           </div>
         </Card>
 
-        {/* Account Info */}
+        {/* Account Safety Gates */}
         <Card>
           <CardHeader>
             <div>
               <CardTitle className="flex items-center gap-2 text-emerald-400">
-                <Lock className="w-4 h-4" /> Account Specifications
+                <ShieldCheck className="w-4 h-4" /> Safety Controls
               </CardTitle>
-              <CardDescription>Exness Demo Account Details</CardDescription>
+              <CardDescription>Strict Hard Coded Risk Gates</CardDescription>
             </div>
-            <Badge status="DEMO" variant="green" />
+            <Badge status="SAFEGUARDED" variant="green" />
           </CardHeader>
 
-          <div className="space-y-3 font-mono text-xs border-t border-slate-800 pt-4">
+          <div className="space-y-3 text-xs border-t border-slate-800 pt-4">
             <div className="flex justify-between">
-              <span className="text-slate-400">Login Masked:</span>
-              <span className="text-slate-200">{account?.login_masked || "*****5678"}</span>
+              <span className="text-slate-400">Environment Gate:</span>
+              <span className="text-emerald-400 font-bold">DEMO ONLY (BLOCKED REAL)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Server:</span>
-              <span className="text-slate-200">{account?.server || "Exness-MT5Demo"}</span>
+              <span className="text-slate-400">Margin Mode Gate:</span>
+              <span className="text-emerald-400 font-bold">HEDGING ONLY</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Free Margin:</span>
-              <span className="text-emerald-400 font-bold">${(account?.margin_free || account?.balance || 10000.00).toFixed(2)} USD</span>
+              <span className="text-slate-400">Max Exposure Limit:</span>
+              <span className="text-amber-300 font-bold">{totalVolume.toFixed(2)} / 2.00 Lots</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Leverage / Mode:</span>
-              <span className="text-slate-200">1:{account?.leverage || 500} (Hedging)</span>
+              <span className="text-slate-400">Max Entries / Signal:</span>
+              <span className="text-slate-200 font-bold">8 Split Orders</span>
             </div>
           </div>
         </Card>
@@ -231,39 +292,44 @@ export const Mt5Page: React.FC = () => {
               <CardTitle className="flex items-center gap-2 text-indigo-400">
                 <CheckCircle2 className="w-4 h-4" /> Symbol Specifications
               </CardTitle>
-              <CardDescription>XAUUSD Contract Rules</CardDescription>
+              <CardDescription>XAUUSD Contract Trading Rules</CardDescription>
             </div>
             <Badge status="XAUUSD" variant="blue" />
           </CardHeader>
 
-          <div className="space-y-3 font-mono text-xs border-t border-slate-800 pt-4">
+          <div className="space-y-3 text-xs border-t border-slate-800 pt-4">
             <div className="flex justify-between">
               <span className="text-slate-400">Canonical Symbol:</span>
               <span className="text-slate-200 font-bold">XAUUSD</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Broker Symbol:</span>
-              <span className="text-slate-200">{symbol?.broker_symbol || "XAUUSDm"}</span>
+              <span className="text-slate-200 font-bold">{symbol?.broker_symbol || "XAUUSDm"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Digits / Point:</span>
               <span className="text-slate-200">{symbol?.digits || 2} / {symbol?.point || 0.01}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Volume Limits:</span>
-              <span className="text-slate-200">0.01 Min / 2.00 Max</span>
+              <span className="text-slate-400">Volume Min/Max/Step:</span>
+              <span className="text-slate-200">0.01 / 2.00 / 0.01</span>
             </div>
           </div>
         </Card>
       </div>
 
       {/* Active Open Trades / Positions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-emerald-400 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" /> Open Positions ({positions?.length || 0})
-          </CardTitle>
-          <CardDescription>Live MT5 open trades executing on your account.</CardDescription>
+      <Card font-mono>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-emerald-400 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" /> Open Positions ({positions?.length || 0})
+            </CardTitle>
+            <CardDescription>Live active MT5 positions running on your logged-in account.</CardDescription>
+          </div>
+          <span className="text-xs font-mono font-bold text-emerald-400">
+            Total Floating P&L: {totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)} USD
+          </span>
         </CardHeader>
 
         <div className="overflow-x-auto font-mono text-xs">
@@ -285,7 +351,7 @@ export const Mt5Page: React.FC = () => {
               {(positions || []).length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-6 text-center text-slate-500">
-                    No active open positions.
+                    No active open positions on logged-in account.
                   </td>
                 </tr>
               ) : (
@@ -316,12 +382,12 @@ export const Mt5Page: React.FC = () => {
       </Card>
 
       {/* Pending Limit Orders */}
-      <Card>
+      <Card font-mono>
         <CardHeader>
           <CardTitle className="text-sky-400 flex items-center gap-2">
             <Layers className="w-4 h-4" /> Pending Orders ({orders?.length || 0})
           </CardTitle>
-          <CardDescription>Laddered limit orders queued in MetaTrader 5.</CardDescription>
+          <CardDescription>Laddered limit orders placed on your MetaTrader 5 account.</CardDescription>
         </CardHeader>
 
         <div className="overflow-x-auto font-mono text-xs">
@@ -341,7 +407,7 @@ export const Mt5Page: React.FC = () => {
               {(orders || []).length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-6 text-center text-slate-500">
-                    No pending limit orders queued.
+                    No pending limit orders queued in MT5.
                   </td>
                 </tr>
               ) : (
@@ -363,10 +429,10 @@ export const Mt5Page: React.FC = () => {
       </Card>
 
       {/* Execution Batches Queue */}
-      <Card>
+      <Card font-mono>
         <CardHeader>
           <CardTitle className="text-slate-200">MT5 Execution Batch Queue</CardTitle>
-          <CardDescription>Durable single-writer execution queue processing limit order submissions.</CardDescription>
+          <CardDescription>Single-writer queue processing order placement requests.</CardDescription>
         </CardHeader>
 
         <div className="overflow-x-auto font-mono text-xs">
