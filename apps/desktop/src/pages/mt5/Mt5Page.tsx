@@ -90,8 +90,12 @@ export const Mt5Page: React.FC = () => {
   };
 
   // Portfolio & Profit Calculations
-  const totalProfit = (positions || []).reduce((acc: number, p: any) => acc + (p.profit || 0), 0);
-  const totalVolume = (positions || []).reduce((acc: number, p: any) => acc + (p.volume || 0), 0);
+  const positionsList = Array.isArray(positions) ? positions : [];
+  const ordersList = Array.isArray(orders) ? orders : [];
+  const batchesList = Array.isArray(batches) ? batches : [];
+
+  const totalProfit = positionsList.reduce((acc: number, p: any) => acc + (Number(p?.profit) || 0), 0);
+  const totalVolume = positionsList.reduce((acc: number, p: any) => acc + (Number(p?.volume) || 0), 0);
 
   const balance = account?.balance ? Number(account.balance) : 10000.00;
   const equity = account?.equity ? Number(account.equity) : (balance + totalProfit);
@@ -330,7 +334,7 @@ export const Mt5Page: React.FC = () => {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-emerald-400 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4" /> Open Positions ({positions?.length || 0})
+              <TrendingUp className="w-4 h-4" /> Open Positions ({positionsList.length})
             </CardTitle>
             <CardDescription>Live active MT5 positions running on your logged-in account.</CardDescription>
           </div>
@@ -355,30 +359,30 @@ export const Mt5Page: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {(positions || []).length === 0 ? (
+              {positionsList.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-6 text-center text-slate-500">
                     No active open positions on logged-in account.
                   </td>
                 </tr>
               ) : (
-                (positions || []).map((p: any) => (
+                positionsList.map((p: any) => (
                   <tr key={p.ticket || p.id} className="hover:bg-slate-900/50">
                     <td className="p-3 text-slate-300 font-bold">#{p.ticket || p.id}</td>
                     <td className="p-3 font-bold text-sky-400">{p.symbol || "XAUUSD"}</td>
                     <td className="p-3 font-bold">
-                      <span className={`px-2 py-0.5 rounded text-[10px] ${p.type === "BUY" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-rose-950 text-rose-300 border border-rose-800"}`}>
-                        {p.type === "BUY" ? <ArrowUpRight className="w-3 h-3 inline mr-0.5" /> : <ArrowDownRight className="w-3 h-3 inline mr-0.5" />}
-                        {p.type}
+                      <span className={`px-2 py-0.5 rounded text-[10px] ${p.position_type === "BUY" || p.type === "BUY" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-rose-950 text-rose-300 border border-rose-800"}`}>
+                        {p.position_type === "BUY" || p.type === "BUY" ? <ArrowUpRight className="w-3 h-3 inline mr-0.5" /> : <ArrowDownRight className="w-3 h-3 inline mr-0.5" />}
+                        {p.position_type || p.type}
                       </span>
                     </td>
-                    <td className="p-3 text-slate-200">{p.volume?.toFixed(2)} Lots</td>
-                    <td className="p-3 text-slate-200">{p.price_open?.toFixed(2)}</td>
-                    <td className="p-3 text-slate-200">{p.price_current?.toFixed(2) || p.price_open?.toFixed(2)}</td>
-                    <td className="p-3 text-rose-400 font-semibold">{p.sl?.toFixed(2) || "-"}</td>
-                    <td className="p-3 text-emerald-400 font-semibold">{p.tp?.toFixed(2) || "-"}</td>
-                    <td className={`p-3 font-bold ${(p.profit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      {(p.profit || 0) >= 0 ? "+" : ""}${(p.profit || 0).toFixed(2)}
+                    <td className="p-3 text-slate-200">{Number(p.volume || 0).toFixed(2)} Lots</td>
+                    <td className="p-3 text-slate-200">{Number(p.price_open || 0).toFixed(2)}</td>
+                    <td className="p-3 text-slate-200">{Number(p.price_current || p.price_open || 0).toFixed(2)}</td>
+                    <td className="p-3 text-rose-400 font-semibold">{p.stop_loss || p.sl ? Number(p.stop_loss || p.sl).toFixed(2) : "-"}</td>
+                    <td className="p-3 text-emerald-400 font-semibold">{p.take_profit || p.tp ? Number(p.take_profit || p.tp).toFixed(2) : "-"}</td>
+                    <td className={`p-3 font-bold ${Number(p.profit || 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {Number(p.profit || 0) >= 0 ? "+" : ""}${Number(p.profit || 0).toFixed(2)}
                     </td>
                   </tr>
                 ))
@@ -392,7 +396,7 @@ export const Mt5Page: React.FC = () => {
       <Card font-mono>
         <CardHeader>
           <CardTitle className="text-sky-400 flex items-center gap-2">
-            <Layers className="w-4 h-4" /> Pending Orders ({orders?.length || 0})
+            <Layers className="w-4 h-4" /> Pending Orders ({ordersList.length})
           </CardTitle>
           <CardDescription>Laddered limit orders placed on your MetaTrader 5 account.</CardDescription>
         </CardHeader>
@@ -411,21 +415,21 @@ export const Mt5Page: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {(orders || []).length === 0 ? (
+              {ordersList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-6 text-center text-slate-500">
                     No pending limit orders queued in MT5.
                   </td>
                 </tr>
               ) : (
-                (orders || []).map((o: any) => (
+                ordersList.map((o: any) => (
                   <tr key={o.ticket || o.id} className="hover:bg-slate-900/50">
                     <td className="p-3 text-slate-300 font-bold">#{o.ticket || o.id}</td>
-                    <td className="p-3 font-bold text-amber-400">{o.type}</td>
-                    <td className="p-3 text-slate-200">{o.volume?.toFixed(2)} Lots</td>
-                    <td className="p-3 text-slate-200 font-bold">{o.price_setup?.toFixed(2)}</td>
-                    <td className="p-3 text-rose-400 font-semibold">{o.sl?.toFixed(2) || "-"}</td>
-                    <td className="p-3 text-emerald-400 font-semibold">{o.tp?.toFixed(2) || "-"}</td>
+                    <td className="p-3 font-bold text-amber-400">{o.order_type || o.type}</td>
+                    <td className="p-3 text-slate-200">{Number(o.volume || 0).toFixed(2)} Lots</td>
+                    <td className="p-3 text-slate-200 font-bold">{Number(o.price || o.price_setup || 0).toFixed(2)}</td>
+                    <td className="p-3 text-rose-400 font-semibold">{o.stop_loss || o.sl ? Number(o.stop_loss || o.sl).toFixed(2) : "-"}</td>
+                    <td className="p-3 text-emerald-400 font-semibold">{o.take_profit || o.tp ? Number(o.take_profit || o.tp).toFixed(2) : "-"}</td>
                     <td className="p-3"><Badge status={o.state || "PLACED"} /></td>
                   </tr>
                 ))
@@ -456,14 +460,14 @@ export const Mt5Page: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {(batches || []).length === 0 ? (
+              {batchesList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-4 text-center text-slate-500">
                     No execution batches queued.
                   </td>
                 </tr>
               ) : (
-                (batches || []).map((b: any) => (
+                batchesList.map((b: any) => (
                   <tr key={b.id} className="hover:bg-slate-800/40">
                     <td className="p-3 font-semibold text-slate-200">{b.id?.substring(0, 8)}...</td>
                     <td className="p-3 text-sky-400">{b.campaign_id?.substring(0, 8)}...</td>
