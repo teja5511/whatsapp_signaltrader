@@ -21,6 +21,15 @@ Write-Host "[2/3] Running Startup Recovery Checks..." -ForegroundColor Yellow
 python -c "from src.recovery.startup import StartupRecoveryManager; res = StartupRecoveryManager().run_startup_recovery(); print('[OK] Startup recovery status:', res.database_integrity)"
 
 # 3. Informational Summary
-Write-Host "[3/3] Ready to run trading service & desktop application." -ForegroundColor Green
-Write-Host "To start FastAPI Trading Service: uvicorn apps.trading-service.src.main:app --port 8000" -ForegroundColor Gray
-Write-Host "To start Tauri Desktop App: pnpm desktop:dev" -ForegroundColor Gray
+Write-Host "[3/3] System environment configured for Real MT5 Terminal & WhatsApp Web!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Launch Commands for Real Trading Mode:" -ForegroundColor Yellow
+Write-Host '1. Start Trading Service (FastAPI):' -ForegroundColor Cyan
+Write-Host '   $env:PYTHONPATH="apps/trading-service"; $env:MT5_ADAPTER_MODE="real"; uvicorn apps.trading-service.src.main:app --port 8000' -ForegroundColor Gray
+Write-Host ""
+Write-Host '2. Start WhatsApp Worker (Baileys):' -ForegroundColor Cyan
+Write-Host '   $env:WHATSAPP_ADAPTER_MODE="real"; pnpm whatsapp:dev' -ForegroundColor Gray
+Write-Host ""
+Write-Host '3. Start Desktop Dashboard App:' -ForegroundColor Cyan
+Write-Host '   pnpm desktop:dev' -ForegroundColor Gray
+Write-Host "============================================================" -ForegroundColor Cyan
