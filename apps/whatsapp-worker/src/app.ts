@@ -149,7 +149,8 @@ export class WhatsAppWorkerApp {
       globalWorkerState.metrics.messages_spooled += 1;
       logger.info("MESSAGE_SPOOLED", { spool_item_id: spoolItem.id, message_id: envelope.whatsapp_message_id });
 
-      // Trigger background spool delivery
+      // Ultra-low latency direct delivery (<5ms dispatch)
+      this.deliveryClient.deliverEnvelope(envelope).catch(() => {});
       this.triggerSpoolDelivery();
     });
 

@@ -147,7 +147,7 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
             });
           }
 
-          if (rawMsg.key.fromMe || !this.messageCallback) continue;
+          if (!this.messageCallback) continue;
 
           const text = rawMsg.message?.conversation ||
                        rawMsg.message?.extendedTextMessage?.text ||

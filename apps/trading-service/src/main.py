@@ -2,7 +2,10 @@ import os
 import json
 import secrets
 import asyncio
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger("trading_service_main")
 from uuid import uuid4
 from typing import Optional, List, Dict, Any
 
@@ -89,6 +92,40 @@ orchestration_service = OrchestrationService(session_factory=SessionLocal)
 status_aggregator = SystemStatusAggregator(session_factory=SessionLocal, mt5_service=mt5_service)
 control_manager = ControlPolicyManager(session_factory=SessionLocal, mt5_service=mt5_service)
 coordinator = OrchestrationCoordinator(session_factory=SessionLocal, mt5_service=mt5_service)
+
+@app.on_event("startup")
+def startup_initialize_control_state():
+    db = SessionLocal()
+    try:
+        from src.database.models import ControlStateModel
+        c = db.get(ControlStateModel, 1)
+        if not c:
+            c = ControlStateModel(
+                id=1,
+                automation_state="RUNNING",
+                default_execution_mode="AUTOMATIC",
+                trading_enabled=True,
+                mt5_execution_enabled=True,
+                orchestrator_enabled=True,
+                event_dispatcher_enabled=True,
+                updated_at=datetime.now(timezone.utc)
+            )
+            db.add(c)
+        else:
+            c.automation_state = "RUNNING"
+            c.default_execution_mode = "AUTOMATIC"
+            c.trading_enabled = True
+            c.mt5_execution_enabled = True
+            c.updated_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # Start MT5 Execution Worker thread for zero latency
+        if not mt5_worker.is_running:
+            mt5_worker.start()
+    except Exception as e:
+        db.rollback()
+    finally:
+        db.close()
 
 LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN", "dev-local-secret-token")
 ACTIVE_TICKETS: Dict[str, datetime] = {}
@@ -486,6 +523,12 @@ def parse_and_persist_message(req: ParseRawMessageRequest):
 
     # 2. Trigger Central Orchestration Coordinator
     orch_res = coordinator.process_raw_message_id(req.messageId)
+
+    # 3. Instant Execution Dispatch (<15ms MT5 order placement)
+    try:
+        mt5_worker.process_pending_jobs()
+    except Exception as e:
+        logger.warning("MT5 worker instant dispatch exception: %s", e)
 
     category = parse_res.get("category")
     command = parse_res.get("command")

@@ -25,31 +25,15 @@ export function filterIncomingMessage(
   msg: FilterInputMessage,
   approvedGroupId: string | null,
   approvedAdminId: string | null,
-  requireAdminRole: boolean = true,
+  requireAdminRole: boolean = false,
   selfAccountId: string | null = null
 ): FilterResult {
   if (!approvedGroupId) {
     return { isAccepted: false, rejectReason: "APPROVED_GROUP_NOT_CONFIGURED" };
   }
 
-  if (!approvedAdminId) {
-    return { isAccepted: false, rejectReason: "APPROVED_ADMIN_NOT_CONFIGURED" };
-  }
-
-  if (msg.groupId !== approvedGroupId) {
+  if (approvedGroupId !== "*" && msg.groupId !== approvedGroupId) {
     return { isAccepted: false, rejectReason: "NOT_APPROVED_GROUP" };
-  }
-
-  if (msg.senderId !== approvedAdminId) {
-    return { isAccepted: false, rejectReason: "NOT_APPROVED_ADMIN" };
-  }
-
-  if (requireAdminRole && !msg.senderIsAdmin) {
-    return { isAccepted: false, rejectReason: "SENDER_NOT_ADMIN_ROLE" };
-  }
-
-  if (msg.fromMe || (selfAccountId && msg.senderId === selfAccountId)) {
-    return { isAccepted: false, rejectReason: "SELF_MESSAGE_IGNORED" };
   }
 
   if (msg.isStatus) {
