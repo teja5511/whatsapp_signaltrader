@@ -190,17 +190,24 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
     this.connectionState = ConnectionState.STOPPED;
   }
 
-  async listGroups(): Promise<GroupSummary[]> {
+  async listGroups(): Promise<any[]> {
     if (this.sock) {
       try {
         const chats = await this.sock.groupFetchAllParticipating();
         for (const [id, c] of Object.entries(chats as Record<string, any>)) {
+          const participantCount = c.participants?.length || 0;
+          const isComm = Boolean(c.isCommunity || c.isCommunityAnnounce);
+          const nameStr = c.subject || c.name || "WhatsApp Group";
           this.knownGroups.set(id, {
+            id,
             group_id: id,
-            display_name: c.subject || c.name || "WhatsApp Group",
-            participant_count: c.participants?.length || 0,
+            name: nameStr,
+            display_name: nameStr,
+            participants: participantCount,
+            participant_count: participantCount,
+            isCommunity: isComm,
+            is_community: isComm,
             is_read_only: Boolean(c.announce),
-            is_community: Boolean(c.isCommunity),
             is_announcement: Boolean(c.announce),
             is_archived: false
           });

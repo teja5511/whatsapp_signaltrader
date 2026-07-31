@@ -12,6 +12,8 @@ import { globalWorkerState } from "./state/worker-state";
 import { createWorkerApiServer } from "./api/server";
 import { ConnectionState, QrState, WHATSAPP_INGESTION_CONTRACT_VERSION, WHATSAPP_WORKER_VERSION } from "./constants";
 
+import { selectedGroupsDb } from "./db/selected-groups-db";
+
 export class WhatsAppWorkerApp {
   public config = loadWorkerConfig();
   public paths = resolveWorkerPaths(this.config.dataDir);
@@ -93,9 +95,19 @@ export class WhatsAppWorkerApp {
         isSystem: Boolean(rawMsg.isSystem)
       };
 
+      // FEATURE 8 & 16: Strict Monitored Groups Check
+      const allSelected = selectedGroupsDb.getAll();
+      if (allSelected.length > 0) {
+        const enabledJids = selectedGroupsDb.getEnabledJids();
+        if (!enabledJids.has(groupId)) {
+          globalWorkerState.incrementIgnored("UNAPPROVED_GROUP");
+          return;
+        }
+      }
+
       const filterRes = filterIncomingMessage(
         filterInput,
-        globalWorkerState.approvedGroupId,
+        allSelected.length > 0 ? groupId : globalWorkerState.approvedGroupId,
         globalWorkerState.approvedAdminId,
         this.config.requireAdminRole
       );
@@ -104,6 +116,8 @@ export class WhatsAppWorkerApp {
         globalWorkerState.incrementIgnored(filterRes.rejectReason || "REJECTED");
         return;
       }
+
+      selectedGroupsDb.recordSignal(groupId);
 
       globalWorkerState.metrics.messages_accepted += 1;
 

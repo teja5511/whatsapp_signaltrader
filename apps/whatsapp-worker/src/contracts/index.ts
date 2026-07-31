@@ -26,6 +26,10 @@ export const WhatsAppMessageEnvelopeSchema = z.object({
 export type WhatsAppMessageEnvelope = z.infer<typeof WhatsAppMessageEnvelopeSchema>;
 
 export const GroupSummarySchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  participants: z.number().int().optional(),
+  isCommunity: z.boolean().optional(),
   group_id: z.string(),
   display_name: z.string(),
   participant_count: z.number().int(),

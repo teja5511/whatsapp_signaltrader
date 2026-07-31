@@ -214,6 +214,23 @@ export class ApiClient {
     return this.request<any>("/configuration", "GET", undefined, "worker");
   }
 
+  // Selected Groups SQLite Endpoints
+  async getSelectedGroups(): Promise<any[]> {
+    return this.request<any[]>("/selected-groups", "GET", undefined, "worker");
+  }
+
+  async addSelectedGroup(jid: string, name?: string): Promise<any> {
+    return this.request<any>("/selected-groups", "POST", { jid, name }, "worker");
+  }
+
+  async deleteSelectedGroup(jid: string): Promise<any> {
+    return this.request<any>(`/selected-groups/${encodeURIComponent(jid)}`, "DELETE", undefined, "worker");
+  }
+
+  async patchSelectedGroup(jid: string, enabled: boolean): Promise<any> {
+    return this.request<any>(`/selected-groups/${encodeURIComponent(jid)}`, "PATCH", { enabled }, "worker");
+  }
+
   // Realtime Ticket & Event Replay
   async createEventTicket(): Promise<{ ticket: string; expires_in_seconds: number }> {
     return this.request<{ ticket: string; expires_in_seconds: number }>("/api/v1/events/ticket", "POST");

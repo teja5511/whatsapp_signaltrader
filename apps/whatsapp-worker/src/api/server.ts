@@ -10,6 +10,7 @@ import { QuarantineManager } from "../openwa/quarantine";
 import { SessionManager } from "../openwa/session";
 import { saveLocalConfig } from "../config/loader";
 import { globalEventBus, WorkerEvent } from "../state/event-bus";
+import { selectedGroupsDb } from "../db/selected-groups-db";
 
 export function createWorkerApiServer(
   config: WorkerConfig,
@@ -121,13 +122,53 @@ export function createWorkerApiServer(
         return sendJson(200, summary);
       }
 
+      // FEATURE 11: Selected Groups Management Endpoints
+      if (method === "GET" && pathname === "/selected-groups") {
+        const selected = selectedGroupsDb.getAll();
+        return sendJson(200, selected);
+      }
+
+      if (method === "POST" && pathname === "/selected-groups") {
+        const body = await parseBody();
+        const jid = (body.jid || body.group_id || "").trim();
+        const name = (body.name || body.display_name || jid).trim();
+        if (!jid) return sendJson(422, { error: "Group JID is required." });
+        const record = selectedGroupsDb.add(jid, name);
+        // Also update legacy approvedGroupId if not set
+        if (!globalWorkerState.approvedGroupId) {
+          globalWorkerState.approvedGroupId = jid;
+        }
+        return sendJson(200, record);
+      }
+
+      if (method === "DELETE" && (pathname === "/selected-groups" || pathname.startsWith("/selected-groups/"))) {
+        const body = await parseBody().catch(() => ({}));
+        const queryJid = parsedUrl.searchParams.get("jid");
+        const pathJid = decodeURIComponent(pathname.replace("/selected-groups/", "").replace("/selected-groups", "").trim());
+        const jid = (body.jid || queryJid || pathJid).trim();
+        if (!jid) return sendJson(422, { error: "Group JID is required." });
+        selectedGroupsDb.remove(jid);
+        return sendJson(200, { success: true, jid });
+      }
+
+      if (method === "PATCH" && (pathname === "/selected-groups" || pathname.startsWith("/selected-groups/"))) {
+        const body = await parseBody();
+        const queryJid = parsedUrl.searchParams.get("jid");
+        const pathJid = decodeURIComponent(pathname.replace("/selected-groups/", "").replace("/selected-groups", "").trim());
+        const jid = (body.jid || queryJid || pathJid).trim();
+        if (!jid) return sendJson(422, { error: "Group JID is required." });
+        const updated = selectedGroupsDb.setEnabled(jid, Boolean(body.enabled));
+        return sendJson(200, updated || { jid, enabled: Boolean(body.enabled) });
+      }
+
       if (method === "GET" && pathname === "/configuration") {
         return sendJson(200, {
           adapter_mode: config.adapterMode,
           approved_group_id: globalWorkerState.approvedGroupId,
           approved_admin_id: globalWorkerState.approvedAdminId,
           require_admin_role: config.requireAdminRole,
-          trading_service_url: config.tradingServiceUrl
+          trading_service_url: config.tradingServiceUrl,
+          selected_groups: selectedGroupsDb.getAll()
         });
       }
 
