@@ -185,16 +185,19 @@ def get_audit_logs():
 def get_app_settings():
     db = SessionLocal()
     try:
+        from src.database.models import ControlStateModel
+        c = db.get(ControlStateModel, 1)
+        trading_enabled = c.trading_enabled if c else True
         repo = SettingsRepository(db)
         s = repo.get_settings()
         return {
             "entry_count": s.entry_count,
-            "lot_per_entry": float(s.lot_per_entry),
-            "max_exposure_lots": float(s.max_exposure_lots),
-            "execution_mode": s.execution_mode.value,
+            "lot_per_entry": str(s.lot_per_entry),
+            "max_exposure_lots": str(s.max_exposure_lots),
+            "execution_mode": s.execution_mode.value if hasattr(s.execution_mode, "value") else str(s.execution_mode),
             "target_group_jid": s.target_group_jid,
             "admin_sender_jid": s.admin_sender_jid,
-            "trading_enabled": False
+            "trading_enabled": trading_enabled
         }
     finally:
         db.close()
