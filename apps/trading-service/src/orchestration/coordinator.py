@@ -238,7 +238,7 @@ class OrchestrationCoordinator:
         exec_mode_str = campaign.execution_mode.value if hasattr(campaign.execution_mode, "value") else str(campaign.execution_mode)
 
         requires_confirmation = (
-            exec_mode_str != MODE_AUTOMATIC
+            exec_mode_str not in (MODE_AUTOMATIC, "AUTO", "AUTOMATIC")
             or auto_state != AUTOMATION_RUNNING
             or not trading_en
             or not mt5_en

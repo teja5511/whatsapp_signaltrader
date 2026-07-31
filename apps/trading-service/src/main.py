@@ -103,7 +103,7 @@ def startup_initialize_control_state():
             c = ControlStateModel(
                 id=1,
                 automation_state="RUNNING",
-                default_execution_mode="AUTOMATIC",
+                default_execution_mode="AUTO",
                 trading_enabled=True,
                 mt5_execution_enabled=True,
                 orchestrator_enabled=True,
@@ -113,10 +113,14 @@ def startup_initialize_control_state():
             db.add(c)
         else:
             c.automation_state = "RUNNING"
-            c.default_execution_mode = "AUTOMATIC"
+            c.default_execution_mode = "AUTO"
             c.trading_enabled = True
             c.mt5_execution_enabled = True
             c.updated_at = datetime.now(timezone.utc)
+        # Ensure SettingsRepository execution_mode is AUTO for instant trade placement
+        settings_repo = SettingsRepository(db)
+        settings_repo.set_setting("execution_mode", "AUTO")
+
         db.commit()
 
         # Start MT5 Execution Worker thread for zero latency
@@ -526,7 +530,7 @@ def parse_and_persist_message(req: ParseRawMessageRequest):
 
     # 3. Instant Execution Dispatch (<15ms MT5 order placement)
     try:
-        mt5_worker.process_pending_jobs()
+        mt5_worker.process_next_job()
     except Exception as e:
         logger.warning("MT5 worker instant dispatch exception: %s", e)
 

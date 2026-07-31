@@ -40,9 +40,16 @@ class CampaignFactory:
         Creates CampaignModel from signal.
         Returns (campaign_model, initial_state)
         """
-        # Determine initial state: WAITING_FOR_TP if TP1 or TP2 missing, else AWAITING_CONFIRMATION
-        is_missing_tp = (signal_rec.tp1 is None) or (signal_rec.tp2 is None)
+        # Determine initial state: WAITING_FOR_TP only if both TP1 and TP2 are missing
+        is_missing_tp = (signal_rec.tp1 is None) and (signal_rec.tp2 is None)
         initial_state = STATE_WAITING_FOR_TP if is_missing_tp else STATE_AWAITING_CONFIRMATION
+
+        # If TP1 is present but TP2 is missing, fill TP2 with TP1 target
+        if signal_rec.tp1 is not None and signal_rec.tp2 is None:
+            if signal_rec.direction == "BUY":
+                signal_rec.tp2 = signal_rec.tp1 + Decimal("10.00")
+            else:
+                signal_rec.tp2 = signal_rec.tp1 - Decimal("10.00")
 
         entry_count = settings.entry_count
         lot_per_entry = float(settings.lot_per_entry)
