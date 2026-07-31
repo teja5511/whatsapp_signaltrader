@@ -235,7 +235,13 @@ class OrchestrationCoordinator:
         auto_state = ctrl.automation_state if ctrl else "PAUSED"
         trading_en = ctrl.trading_enabled if ctrl else False
         mt5_en = ctrl.mt5_execution_enabled if ctrl else False
-        exec_mode_str = campaign.execution_mode.value if hasattr(campaign.execution_mode, "value") else str(campaign.execution_mode)
+        
+        # System global execution mode takes precedence if set to AUTO / AUTOMATIC
+        if ctrl and ctrl.default_execution_mode in ("AUTO", "AUTOMATIC"):
+            exec_mode_str = "AUTO"
+            campaign.execution_mode = "AUTO"
+        else:
+            exec_mode_str = campaign.execution_mode.value if hasattr(campaign.execution_mode, "value") else str(campaign.execution_mode)
 
         requires_confirmation = (
             exec_mode_str not in (MODE_AUTOMATIC, "AUTO", "AUTOMATIC")
