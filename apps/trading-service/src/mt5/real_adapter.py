@@ -62,10 +62,20 @@ class RealMT5Adapter(MT5AdapterInterface):
             self._health_state = HEALTH_NOT_INSTALLED
             raise MT5PackageUnavailableError("MetaTrader5 python module is not installed.")
 
-        # Initialize MT5 terminal connection
+        # Initialize MT5 terminal connection with credentials if available
         init_kwargs = {}
         if self._terminal_path and os.path.exists(self._terminal_path):
             init_kwargs["path"] = self._terminal_path
+
+        env_login = os.getenv("MT5_LOGIN")
+        env_password = os.getenv("MT5_PASSWORD")
+        env_server = os.getenv("MT5_SERVER")
+        if env_login and env_login.strip().isdigit():
+            init_kwargs["login"] = int(env_login.strip())
+        if env_password:
+            init_kwargs["password"] = env_password
+        if env_server:
+            init_kwargs["server"] = env_server
 
         ok = mt5.initialize(**init_kwargs)
         if not ok:
