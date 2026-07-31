@@ -59,6 +59,14 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
         };
       }
 
+      if (this.sock) {
+        try {
+          this.sock.ev.removeAllListeners("connection.update");
+          this.sock.ev.removeAllListeners("messages.upsert");
+          this.sock.end(undefined);
+        } catch {}
+      }
+
       this.sock = makeWASocket({
         version,
         auth: state,
