@@ -105,11 +105,18 @@ pnpm whatsapp:dev
 ```
 
 ### 2. Start the Python Backend
-Activate the virtual environment and launch the FastAPI web server:
-```bash
+Navigate into the trading service directory and launch the FastAPI web server:
+
+**Step-by-step (PowerShell / Windows Terminal):**
+```powershell
 cd apps/trading-service
-.venv\Scripts\activate
+.\.venv\Scripts\activate
 python -m uvicorn src.main:app --host 127.0.0.1 --port 8000
+```
+
+**Single-line Copy & Paste (PowerShell):**
+```powershell
+cd apps/trading-service; $env:MT5_ADAPTER_MODE="real"; python -m uvicorn src.main:app --host 127.0.0.1 --port 8000
 ```
 
 ### 3. Launch the Desktop Dashboard

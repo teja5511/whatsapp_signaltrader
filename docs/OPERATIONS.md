@@ -19,8 +19,8 @@ This script automatically:
 
 To launch the FastAPI backend service manually:
 ```powershell
-$env:PYTHONPATH="apps/trading-service"
-uvicorn apps.trading-service.src.main:app --port 8000
+cd apps/trading-service
+python -m uvicorn src.main:app --port 8000
 ```
 
 To launch the Tauri desktop dashboard:

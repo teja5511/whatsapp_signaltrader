@@ -25,7 +25,7 @@ Write-Host "[3/3] System environment configured for Real MT5 Terminal & WhatsApp
 Write-Host ""
 Write-Host "Launch Commands for Real Trading Mode:" -ForegroundColor Yellow
 Write-Host '1. Start Trading Service (FastAPI):' -ForegroundColor Cyan
-Write-Host '   $env:PYTHONPATH="apps/trading-service"; $env:MT5_ADAPTER_MODE="real"; uvicorn apps.trading-service.src.main:app --port 8000' -ForegroundColor Gray
+Write-Host '   cd apps/trading-service; $env:MT5_ADAPTER_MODE="real"; python -m uvicorn src.main:app --port 8000' -ForegroundColor Gray
 Write-Host ""
 Write-Host '2. Start WhatsApp Worker (Baileys):' -ForegroundColor Cyan
 Write-Host '   $env:WHATSAPP_ADAPTER_MODE="real"; pnpm whatsapp:dev' -ForegroundColor Gray
