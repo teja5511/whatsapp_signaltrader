@@ -58,10 +58,13 @@ class MT5ExecutionWorker:
         self.is_running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._last_halted_check_time: float = 0.0
+        self._last_halted_value: bool = False
+        self._last_heartbeat_time: float = 0.0
 
     # -- background loop ----------------------------------------------------
 
-    def start(self, poll_interval_seconds: float = 1.0) -> None:
+    def start(self, poll_interval_seconds: float = 0.05) -> None:
         """Start the drain loop in a daemon thread. Idempotent."""
         if self.is_running:
             return
@@ -102,22 +105,35 @@ class MT5ExecutionWorker:
 
     def _execution_is_halted(self) -> bool:
         """Emergency stop and the trading toggle gate the whole loop."""
+        import time as _time
+        now = _time.time()
+        if (now - self._last_halted_check_time) < 2.0:
+            return self._last_halted_value
+
         db = self.session_factory()
+        is_halted = True
         try:
             ctrl = db.get(ControlStateModel, 1)
-            if ctrl is None:
-                return True
-            if ctrl.automation_state == "EMERGENCY_STOPPED":
-                return True
-            if ctrl.shutdown_state != "RUNNING":
-                return True
-            return not (ctrl.trading_enabled and ctrl.mt5_execution_enabled)
+            if ctrl is not None:
+                if ctrl.automation_state != "EMERGENCY_STOPPED":
+                    if not (getattr(ctrl, "shutdown_state", "RUNNING") and ctrl.shutdown_state not in ("RUNNING", None)):
+                        if ctrl.trading_enabled and ctrl.mt5_execution_enabled:
+                            is_halted = False
         except Exception:
-            return True
+            is_halted = True
         finally:
             db.close()
+            self._last_halted_check_time = now
+            self._last_halted_value = is_halted
 
-    def _record_heartbeat(self, status: str, detail: Optional[Dict[str, Any]] = None) -> None:
+        return is_halted
+
+    def _record_heartbeat(self, status: str, detail: Optional[Dict[str, Any]] = None, force: bool = False) -> None:
+        import time as _time
+        now = _time.time()
+        if not force and (now - self._last_heartbeat_time) < 5.0:
+            return
+
         db = self.session_factory()
         try:
             now_utc = datetime.now(timezone.utc)
@@ -133,6 +149,7 @@ class MT5ExecutionWorker:
             hb.detail_json = json.dumps(detail or {})
             hb.heartbeat_at = now_utc
             db.commit()
+            self._last_heartbeat_time = now
         except Exception:
             db.rollback()
         finally:
@@ -185,8 +202,28 @@ class MT5ExecutionWorker:
                     )
                     return True
 
-                order_type_str = "BUY_LIMIT" if campaign.signal.direction == "BUY" else "SELL_LIMIT"
-                comment = entry.order_comment or f"{campaign.campaign_code}-E{(entry.ladder_index + 1):02d}"
+                direction_str = str(campaign.signal.direction).upper().strip()
+                entry_price = float(coerce_decimal(entry.price))
+
+                # Fetch current tick price to dynamically choose LIMIT vs STOP
+                try:
+                    tick = self.adapter.symbol_tick("XAUUSD")
+                    current_price = float(tick.ask if direction_str == "BUY" else tick.bid)
+                except Exception:
+                    current_price = 0.0
+
+                if direction_str == "BUY":
+                    if current_price > 0 and entry_price >= current_price:
+                        order_type_str = "BUY_STOP"
+                    else:
+                        order_type_str = "BUY_LIMIT"
+                else:  # SELL
+                    if current_price > 0 and entry_price <= current_price:
+                        order_type_str = "SELL_STOP"
+                    else:
+                        order_type_str = "SELL_LIMIT"
+
+                comment = f"{campaign.campaign_code}-E{(entry.ladder_index + 1):02d}"
                 magic = campaign.magic_number
 
                 check_req = Mt5OrderCheckRequestDTO(

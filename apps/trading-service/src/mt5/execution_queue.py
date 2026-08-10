@@ -12,6 +12,9 @@ from src.mt5.constants import (
     BATCH_QUEUED, BATCH_RUNNING, BATCH_SUCCEEDED, BATCH_PARTIALLY_PLACED, BATCH_FAILED
 )
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 class MT5ExecutionQueue:
     """Manages persistent queuing and single-writer job locking in SQLite."""
 
@@ -24,7 +27,7 @@ class MT5ExecutionQueue:
         jobs_data: List[Dict[str, Any]]
     ) -> Tuple[MT5ExecutionBatchModel, List[MT5ExecutionJobModel]]:
         batch_id = str(uuid4())
-        now_utc = datetime.now(timezone.utc)
+        now_utc = _utc_now()
 
         batch = MT5ExecutionBatchModel(
             id=batch_id,
@@ -78,7 +81,7 @@ class MT5ExecutionQueue:
         has expired is reclassified as OUTCOME_UNKNOWN by the recovery sweep
         rather than being handed to another worker and sent twice.
         """
-        now_utc = datetime.now(timezone.utc)
+        now_utc = _utc_now()
         job = (
             db.query(MT5ExecutionJobModel)
             .filter(MT5ExecutionJobModel.status == JOB_QUEUED)
@@ -106,7 +109,7 @@ class MT5ExecutionQueue:
         Counts against the batch like a failure but is never retried
         automatically and always requires manual review.
         """
-        now_utc = datetime.now(timezone.utc)
+        now_utc = _utc_now()
         job = db.get(MT5ExecutionJobModel, job_id)
         if not job:
             return
@@ -130,7 +133,7 @@ class MT5ExecutionQueue:
 
     @staticmethod
     def complete_job(db: Session, job_id: str, result_dict: Dict[str, Any]) -> None:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = _utc_now()
         job = db.get(MT5ExecutionJobModel, job_id)
         if job:
             job.status = JOB_SUCCEEDED
@@ -150,7 +153,7 @@ class MT5ExecutionQueue:
 
     @staticmethod
     def fail_job(db: Session, job_id: str, error_code: str, error_msg: str) -> None:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = _utc_now()
         job = db.get(MT5ExecutionJobModel, job_id)
         if job:
             job.status = JOB_FAILED

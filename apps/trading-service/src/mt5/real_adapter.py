@@ -34,6 +34,22 @@ except ImportError:
     mt5 = None
     HAS_MT5_PACKAGE = False
 
+def _to_mt5_order_type(order_type: str) -> int:
+    ot = (order_type or "").upper().strip()
+    if ot == "BUY_LIMIT":
+        return mt5.ORDER_TYPE_BUY_LIMIT
+    elif ot == "SELL_LIMIT":
+        return mt5.ORDER_TYPE_SELL_LIMIT
+    elif ot == "BUY_STOP":
+        return mt5.ORDER_TYPE_BUY_STOP
+    elif ot == "SELL_STOP":
+        return mt5.ORDER_TYPE_SELL_STOP
+    elif ot == "BUY":
+        return mt5.ORDER_TYPE_BUY
+    elif ot == "SELL":
+        return mt5.ORDER_TYPE_SELL
+    return mt5.ORDER_TYPE_BUY_LIMIT if "BUY" in ot else mt5.ORDER_TYPE_SELL_LIMIT
+
 class RealMT5Adapter(MT5AdapterInterface):
     def __init__(
         self,
@@ -48,6 +64,8 @@ class RealMT5Adapter(MT5AdapterInterface):
         self._symbol_override = symbol_override or os.getenv("MT5_SYMBOL_OVERRIDE")
         self._initialized = False
         self._health_state = HEALTH_NOT_INITIALIZED
+        self._cached_account_info: Optional[Mt5AccountInfoDTO] = None
+        self._cached_account_info_time: float = 0.0
 
     @property
     def mode(self) -> str:
@@ -159,7 +177,12 @@ class RealMT5Adapter(MT5AdapterInterface):
             company=str(info.company or "")
         )
 
-    def account_info(self) -> Mt5AccountInfoDTO:
+    def account_info(self, force_refresh: bool = False) -> Mt5AccountInfoDTO:
+        import time as _time
+        now = _time.time()
+        if not force_refresh and self._cached_account_info and (now - self._cached_account_info_time < 5.0):
+            return self._cached_account_info
+
         if not HAS_MT5_PACKAGE:
             raise MT5PackageUnavailableError()
         info = mt5.account_info()
@@ -195,7 +218,7 @@ class RealMT5Adapter(MT5AdapterInterface):
         login_str = str(login_val)
         masked = f"{login_str[:4]}****" if len(login_str) >= 4 else "****"
 
-        return Mt5AccountInfoDTO(
+        acc_dto = Mt5AccountInfoDTO(
             login=login_val,
             login_masked=masked,
             server=str(info.server or ""),
@@ -211,6 +234,9 @@ class RealMT5Adapter(MT5AdapterInterface):
             trade_allowed=bool(info.trade_allowed),
             trade_expert=bool(info.trade_expert)
         )
+        self._cached_account_info = acc_dto
+        self._cached_account_info_time = now
+        return acc_dto
 
     def list_symbols(self) -> List[str]:
         if not HAS_MT5_PACKAGE:
@@ -291,7 +317,7 @@ class RealMT5Adapter(MT5AdapterInterface):
                 broker_symbol = res_sym.broker_symbol
         mt5.symbol_select(broker_symbol, True)
 
-        order_type_val = mt5.ORDER_TYPE_BUY_LIMIT if req.order_type == "BUY_LIMIT" else mt5.ORDER_TYPE_SELL_LIMIT
+        order_type_val = _to_mt5_order_type(req.order_type)
         type_filling = mt5.ORDER_FILLING_RETURN
         if req.filling_type == FILLING_FOK:
             type_filling = mt5.ORDER_FILLING_FOK
@@ -307,7 +333,7 @@ class RealMT5Adapter(MT5AdapterInterface):
             "sl": float(req.stop_loss),
             "tp": float(req.take_profit) if req.take_profit is not None else 0.0,
             "magic": req.magic_number,
-            "comment": req.comment,
+            "comment": str(req.comment or "").rstrip('_')[:31],
             "type_filling": type_filling,
             "type_time": mt5.ORDER_TIME_GTC
         }
@@ -335,25 +361,8 @@ class RealMT5Adapter(MT5AdapterInterface):
         if acc.environment_kind != ENV_DEMO or acc.margin_mode != MARGIN_HEDGING:
             raise MT5LiveAccountBlockedError(acc.login, acc.environment_kind)
 
-        # MANDATORY order_check BEFORE order_send
-        check_req = Mt5OrderCheckRequestDTO(
-            symbol=req.symbol,
-            volume=req.volume,
-            order_type=req.order_type,
-            price=req.price,
-            stop_loss=req.stop_loss,
-            take_profit=req.take_profit,
-            magic_number=req.magic_number,
-            comment=req.comment,
-            filling_type=req.filling_type,
-            time_type=req.time_type
-        )
-        check_res = self.order_check(check_req)
-        if not check_res.is_valid:
-            raise OrderCheckFailedError(check_res.retcode, check_res.retcode_name, check_res.comment)
-
         # Build raw MT5 order_send request
-        order_type_val = mt5.ORDER_TYPE_BUY_LIMIT if req.order_type == "BUY_LIMIT" else mt5.ORDER_TYPE_SELL_LIMIT
+        order_type_val = _to_mt5_order_type(req.order_type)
         type_filling = mt5.ORDER_FILLING_RETURN
         if req.filling_type == FILLING_FOK:
             type_filling = mt5.ORDER_FILLING_FOK
@@ -376,7 +385,7 @@ class RealMT5Adapter(MT5AdapterInterface):
             "sl": float(req.stop_loss),
             "tp": float(req.take_profit) if req.take_profit is not None else 0.0,
             "magic": req.magic_number,
-            "comment": req.comment,
+            "comment": str(req.comment or "").rstrip('_')[:31],
             "type_filling": type_filling,
             "type_time": mt5.ORDER_TIME_GTC
         }

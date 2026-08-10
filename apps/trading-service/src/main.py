@@ -131,15 +131,15 @@ def startup_initialize_control_state():
         # Ensure SettingsRepository execution_mode is AUTO for instant trade placement
         settings_repo = SettingsRepository(db)
         settings_repo.set_setting("execution_mode", "AUTO")
-
         db.commit()
+        db.close()
 
         # Start MT5 Execution Worker thread for zero latency
         if not mt5_worker.is_running:
             mt5_worker.start()
     except Exception as e:
+        logger.exception("Error during startup_initialize_control_state: %s", e)
         db.rollback()
-    finally:
         db.close()
 
 LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN", "dev-local-secret-token")
@@ -544,7 +544,7 @@ def parse_and_persist_message(req: ParseRawMessageRequest):
 
     # 3. Instant Execution Dispatch (<15ms MT5 order placement)
     try:
-        mt5_worker.process_next_job()
+        threading.Thread(target=mt5_worker.process_next_batch, daemon=True).start()
     except Exception as e:
         logger.warning("MT5 worker instant dispatch exception: %s", e)
 
@@ -749,9 +749,9 @@ def get_mt5_account_info():
         except Exception:
             pass
         return {
-            "login": 414051355,
-            "login_masked": "4140****",
-            "server": "Exness-MT5Trial6",
+            "login": int(os.getenv("MT5_LOGIN", 12345678) if str(os.getenv("MT5_LOGIN", "")).isdigit() else 12345678),
+            "login_masked": "1234****",
+            "server": os.getenv("MT5_SERVER", "Exness-MT5Demo"),
             "company": "Exness Technologies Ltd",
             "environment_kind": "DEMO",
             "margin_mode": "HEDGING",
@@ -943,17 +943,17 @@ def list_confirmations():
     db = SessionLocal()
     try:
         from src.database.models import CampaignModel, AmbiguousCommandConfirmationModel
-        campaigns = db.query(CampaignModel).filter(CampaignModel.state == "AWAITING_CONFIRMATION").all()
+        campaigns = db.query(CampaignModel).filter(CampaignModel.current_state == "AWAITING_CONFIRMATION").all()
         ambiguous = db.query(AmbiguousCommandConfirmationModel).filter(AmbiguousCommandConfirmationModel.status == "PENDING").all()
         return {
             "campaign_confirmations": [
                 {
                     "campaign_id": c.id,
                     "campaign_code": c.campaign_code,
-                    "direction": c.direction,
-                    "zone_low": float(c.zone_low),
-                    "zone_high": float(c.zone_high),
-                    "stop_loss": float(c.stop_loss),
+                    "direction": c.signal.direction if c.signal else "SELL",
+                    "zone_low": float(c.signal.entry_min) if c.signal and c.signal.entry_min else 0.0,
+                    "zone_high": float(c.signal.entry_max) if c.signal and c.signal.entry_max else 0.0,
+                    "stop_loss": float(c.signal.stop_loss) if c.signal and c.signal.stop_loss else 0.0,
                     "version": c.version,
                     "created_at": c.created_at.isoformat()
                 }

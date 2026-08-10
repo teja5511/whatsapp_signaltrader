@@ -137,7 +137,7 @@ def plan_campaign_entries(
         all_issues.extend(tp_calc_issues)
 
         magic = generate_entry_magic_number(campaign_id, seq)
-        comment = f"WA-{campaign_code}-E{seq:02d}-{category}"
+        comment = f"{campaign_code}-E{seq:02d}"
 
         planned_entries.append({
             "entry_sequence": seq,
