@@ -2,6 +2,7 @@ import os
 import json
 import secrets
 import asyncio
+import threading
 import logging
 from datetime import datetime, timezone
 
@@ -131,6 +132,11 @@ def startup_initialize_control_state():
         # Ensure SettingsRepository execution_mode is AUTO for instant trade placement
         settings_repo = SettingsRepository(db)
         settings_repo.set_setting("execution_mode", "AUTO")
+
+        # Seed default trading policies to prevent database locking during signal handling
+        from src.policies.service import PolicyService
+        PolicyService.seed_missing(db)
+
         db.commit()
         db.close()
 

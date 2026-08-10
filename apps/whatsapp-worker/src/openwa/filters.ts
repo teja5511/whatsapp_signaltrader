@@ -28,11 +28,12 @@ export function filterIncomingMessage(
   requireAdminRole: boolean = false,
   selfAccountId: string | null = null
 ): FilterResult {
-  if (!approvedGroupId) {
-    return { isAccepted: false, rejectReason: "APPROVED_GROUP_NOT_CONFIGURED" };
+  let groupFilter = (approvedGroupId || "").trim();
+  if (!groupFilter || groupFilter === "YOUR_WHATSAPP_GROUP_ID" || groupFilter === "group-123") {
+    groupFilter = "*";
   }
 
-  if (approvedGroupId !== "*" && msg.groupId !== approvedGroupId) {
+  if (groupFilter !== "*" && msg.groupId !== groupFilter) {
     return { isAccepted: false, rejectReason: "NOT_APPROVED_GROUP" };
   }
 

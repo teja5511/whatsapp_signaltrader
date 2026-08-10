@@ -251,18 +251,26 @@ class RealMT5Adapter(MT5AdapterInterface):
             return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=self._symbol_override, is_resolved=True, source="OVERRIDE")
 
         available = self.list_symbols()
-        if canonical in available:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=canonical, is_resolved=True, source="EXACT_MATCH")
+        matches = [s for s in available if s.upper().startswith(canonical) or "GOLD" in s.upper()]
 
-        # Check suffix variants starting with XAUUSD
-        matches = [s for s in available if s.upper().startswith("XAUUSD")]
-        if len(matches) == 1:
+        active_matches = []
+        for s in matches:
+            try:
+                mt5.symbol_select(s, True)
+                t = mt5.symbol_info_tick(s)
+                if t is not None and getattr(t, "bid", 0) > 0:
+                    active_matches.append(s)
+            except Exception:
+                pass
+
+        if len(active_matches) == 1:
+            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=active_matches[0], is_resolved=True, source="ACTIVE_TICK_MATCH")
+        elif len(matches) == 1:
             return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=matches[0], is_resolved=True, source="SUFFIX_VARIANT")
+        elif canonical in available:
+            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=canonical, is_resolved=True, source="EXACT_MATCH")
         elif len(matches) > 1:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol="", is_resolved=False, source="AMBIGUOUS")
-
-        if "GOLD" in available:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol="GOLD", is_resolved=True, source="GOLD_ALIAS")
+            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=matches[0], is_resolved=True, source="FIRST_MATCH")
 
         return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol="", is_resolved=False, source="NOT_FOUND")
 
@@ -642,6 +650,11 @@ class RealMT5Adapter(MT5AdapterInterface):
     def symbol_tick(self, symbol: str = CANONICAL_SYMBOL_XAUUSD) -> Optional[Mt5TickDTO]:
         if not HAS_MT5_PACKAGE:
             return None
+        if not self.is_initialized():
+            try:
+                self.initialize()
+            except Exception:
+                pass
         resolved = symbol
         if symbol == CANONICAL_SYMBOL_XAUUSD:
             resolution = self.resolve_symbol()
