@@ -1,4 +1,4 @@
-"""Catalog of every trading rule that docs/OPEN_DECISIONS.md leaves unresolved.
+"""Catalog of trading policies that must be chosen explicitly.
 
 Each entry is a typed policy with an explicit option set and no implicit default.
 Until an operator confirms an option, the policy reports UNRESOLVED and every

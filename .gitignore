@@ -69,6 +69,12 @@ src-tauri/Cargo.lock
 .env.*
 !.env.example
 
+# This repo installs with pnpm. Ignore npm lockfiles if a tool creates them.
+package-lock.json
+
+# Local knowledge-graph output
+graphify-out/
+
 # IDE, OS, & System Metadata
 .vscode/
 .idea/
