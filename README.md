@@ -1,107 +1,102 @@
-# WhatsApp to MetaTrader 5 (MT5) Gold Trading Bot
+# WhatsApp Signal Trader
 
-A production-oriented, high-reliability Windows desktop application that listens to trading signals in a designated WhatsApp group, parses them deterministically, and places pending order grids (Buy/Sell Limits & Stops) instantly on MetaTrader 5 (restricted to **Exness MT5 Hedging Demo** accounts for safety).
+A Windows app that reads gold signals from a WhatsApp group you choose and places the matching pending orders on a MetaTrader 5 demo account.
 
----
+One command starts the trading service, the WhatsApp worker, and the dashboard.
 
-> [!CAUTION]
-> ### Safety & Demo Account Enforcement
-> **This system is hard-coded to reject live trading.** The execution engine strictly validates that the connected MT5 account is a **Demo/Trial account** with **Hedging mode enabled**. If a live account or netting mode is detected, the adapter will immediately block initialization.
+## Safety
 
----
+Orders are sent only to a **demo hedging** account. A live account or a netting account is rejected before any order is placed.
 
-## ⚡ Key Functions & Capabilities
+MetaTrader must be open, logged in, and **Algo Trading** must be on. If the toolbar button is off, the terminal returns `AutoTrading disabled by client` and nothing is placed.
 
-### 1. Deterministic Signal Parsing
-Every incoming WhatsApp message is parsed to extract key trading details.
-* **Asset**: Restricted to `XAUUSD` (Gold). All other instruments are ignored.
-* **Directions**: `BUY` and `SELL` signals.
-* **Order Grids**: Supports entry zones (e.g., `4092-4100`), dividing the lot size across a multi-order ladder grid (start, middle, and end prices).
-* **TP/SL Targets**: Parsed automatically (e.g., `tp - 4062`, `tp - 4022`, `sl - 4108`).
-* **100 Pips Fallback Policy**: If a Take Profit is marked as `tp - Open`, the bot automatically calculates a 100 pips (10.0 points for Gold) TP target from that specific entry order price.
+## How a signal is traded
 
-### 2. Dynamic Order Type Resolution
-To avoid MT5 terminal execution errors, the bot automatically determines the correct pending order type at execution time by comparing target entry prices against the live bid/ask tick:
-* **BUY Signals**:
-  * Price below market $\rightarrow$ **`BUY_LIMIT`**
-  * Price above market $\rightarrow$ **`BUY_STOP`**
-* **SELL Signals**:
-  * Price above market $\rightarrow$ **`SELL_LIMIT`**
-  * Price below market $\rightarrow$ **`SELL_STOP`**
-
-### 3. Ultra-Low Latency Execution
-Minimizes entry delays through a high-performance database-to-terminal pipeline:
-* **Immediate Threaded Dispatch**: Trades are dispatched to MT5 via background threads within **< 150 milliseconds** from the moment the WhatsApp signal is received.
-* **Optimized IPC**: Implements caching for `account_info` and removes redundant verification roundtrips to the MT5 terminal to speed up execution.
-
-### 4. Admin & Duplicate Protection Gates
-* **Authorized Admin Validator**: Restricts signal parsing exclusively to messages coming from the designated admin JID.
-* **Group Validator**: Only monitors the designated WhatsApp group JID.
-* **Double-De-duplication**: Filters out repeats using both the unique WhatsApp message ID and semantic fingerprint hashes.
-
----
-
-## 🏗️ Architecture Overview
-
-The codebase is structured as a monorepo containing three core components:
+Gold only (`XAUUSD`). Other instruments are ignored.
 
 ```
-whatsapp-trading-bot/
-├── apps/
-│   ├── whatsapp-worker/    # Node.js + Baileys service listening to WhatsApp Web
-│   ├── trading-service/    # FastAPI Python backend managing orchestration & MT5
-│   └── desktop/            # React + Tauri desktop dashboard UI
-├── packages/
-│   ├── shared-contracts/   # TypeScript/Python shared schemas
-│   └── ui/                 # Shared frontend design system
-└── .env.example            # Configuration template
+Gold Sell
+4120-4128
+sl - 4136
+tp - 4112
+tp - 4104
+tp - Open
 ```
 
-* **WhatsApp Worker**: A Node.js daemon using Baileys to connect directly with WhatsApp Web (no browser wrapper required). It parses inbound messages and forwards verified signals to the Python server.
-* **Trading Service**: A FastAPI Python application running an SQLite database, tracking campaign state machines, managing risk limits, and communicating with the MT5 Windows terminal via the official `MetaTrader5` Python package.
-* **Desktop Dashboard**: A React frontend built on Tauri (Rust backend proxy) that displays active campaigns, open positions, connection status, logs, and controls (emergency stop, automation pause/resume).
+- The zone includes both ends. `4120-4128` with the default 5 entries becomes 4120, 4122, 4124, 4126, 4128. Entry count can be 3 to 8.
+- The lot size applies to **each** entry. Five entries at 0.30 is 1.50 lots total. If the total would exceed 2.00 lots, the signal is blocked. Lots are never shrunk to fit.
+- The first entry uses the signal's first numeric target. The second entry uses the second numeric target. Every other entry uses a 100-pip target, which on gold is a price move of 10.00. A sell at 4128 targets 4118. A buy at 4120 targets 4130.
+- `tp - Open` is stored with the signal. It does not leave an order without a target.
+- If a numeric target is missing, that slot uses the same 10.00 distance and the orders are still placed.
+- The order type is chosen from the live quote when the order is sent:
+  - Buy below the market is `BUY_LIMIT`. Buy above the market is `BUY_STOP`.
+  - Sell above the market is `SELL_LIMIT`. Sell below the market is `SELL_STOP`.
+- If price is already inside the zone, or has moved past it, the full ladder is still placed. Each level is a limit or a stop from the live quote.
+- A new signal can run beside an existing one. Filled positions stay open.
+- `Secure profits`, `Exit on your comfort`, and `Hold it` are commands. They are not new entry signals.
 
----
+## Requirements
 
-## ⚙️ Setup & Configuration
+- Windows 10 or 11
+- MetaTrader 5, logged into a demo hedging account
+- Node.js 18 or newer, and [pnpm](https://pnpm.io/)
+- Python 3.11 or newer
 
-### Prerequisites
-* **OS**: Windows 10/11 (MetaTrader 5 library requirement).
-* **Software**: MetaTrader 5 Terminal installed and logged into an **Exness Hedging Demo account**.
-* **Runtime**: Node.js (v18+) and Python (v3.10+).
+## Setup
 
-### Step 1: Install Dependencies
-From the root directory, install all Node and Python dependencies:
-```bash
-# Install node packages
+From the project folder:
+
+```powershell
 pnpm install
-
-# Set up Python virtual environment
-cd apps/trading-service
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r pyproject.toml
+python -m pip install -e ".[dev]"
+python -m pip install MetaTrader5 python-dotenv
+copy .env.example .env
 ```
 
-### Step 2: Configure Environment
-Copy the configuration template and populate it with your credentials:
-```bash
-cp .env.example .env
-```
-Update `.env` with:
-* `MT5_LOGIN` and `MT5_PASSWORD` (Your Exness Demo credentials).
-* `MT5_SERVER` (e.g., `Exness-MT5Trial6`).
-* `APPROVED_GROUP_JID` (Target WhatsApp Group JID).
-* `APPROVED_ADMIN_JID` (Sender's WhatsApp Phone Number + suffix, e.g. `123456789@s.whatsapp.net`).
+Fill in `.env`. Do not commit that file.
 
----
+| Variable | Purpose |
+| --- | --- |
+| `MT5_LOGIN` | Demo account login |
+| `MT5_PASSWORD` | Demo account password |
+| `MT5_SERVER` | Server name shown in MetaTrader, such as `MetaQuotes-Demo` |
+| `MT5_ADAPTER_MODE` | `real` to send orders to the terminal |
+| `APPROVED_GROUP_JID` | Fallback group, used only when no group has been saved in the dashboard |
+| `LOCAL_API_TOKEN` | Shared secret between the dashboard and the local services |
 
-## 🚀 Running the Bot
+Groups you enable on the WhatsApp page are the groups that are traded. Messages you send yourself in an enabled group are accepted, so you can test from the linked account. `APPROVED_ADMIN_JID` applies only when no group has been added.
 
-From the project folder, one command starts MetaTrader, WhatsApp, and the dashboard, then opens the interface:
+## Run
+
+Open MetaTrader and turn Algo Trading on, then from the project folder:
 
 ```powershell
 pnpm start
 ```
 
-Link WhatsApp on the dashboard **WhatsApp** page. The QR code is shown there. On your phone open WhatsApp, then **Linked devices**, then **Link a device**, and scan the code.
+That starts:
+
+| Service | Address |
+| --- | --- |
+| Trading service | http://127.0.0.1:8000 |
+| WhatsApp worker | http://127.0.0.1:8010 |
+| Dashboard | http://localhost:1420 |
+
+The dashboard opens in the browser. On the **WhatsApp** page, scan the QR code from the phone: WhatsApp, Linked devices, Link a device. Add the signal group on that same page and leave it enabled.
+
+Pending orders, open positions, and the execution queue are on the **Positions** page.
+
+## Layout
+
+```
+apps/whatsapp-worker/   Baileys client. Reads the group and forwards messages.
+apps/trading-service/   FastAPI service. Parses the signal, plans the ladder, sends MT5 orders.
+apps/desktop/           Dashboard at http://localhost:1420
+packages/               Shared contracts and UI pieces
+docs/TRADING_RULES.md   Entry, lot, and target rules
+scripts/run-all.ps1     The command behind pnpm start
+```
+
+## What stays off GitHub
+
+`.env`, the WhatsApp session under `apps/whatsapp-worker/data/`, and the SQLite database `apps/trading-service/trading_bot.db` are local. They are listed in `.gitignore`.
