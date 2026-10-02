@@ -1,0 +1,181 @@
+==============================================================================
+                  WHATSAPP TO MT5 SIGNAL TRADING BOT
+                     COMPLETE SYSTEM DOCUMENTATION
+                             (antigravitydoc_)
+==============================================================================
+
+1. SYSTEM OVERVIEW
+------------------
+The WhatsApp to MT5 Signal Trading Bot is an automated, high-reliability 
+desktop & server application designed to monitor trading signals sent by an 
+approved administrator in a designated WhatsApp group, parse them into 
+structured trade grids, perform strict risk and policy checks, and execute 
+pending orders (BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP) on MetaTrader 5 
+(strictly restricted to Exness MT5 Hedging Demo accounts).
+
+Core Stack:
+- Monorepo Architecture: Node.js (pnpm workspace) + Python (FastAPI).
+- WhatsApp Worker: Node.js + Baileys direct web client API.
+- Trading Service: Python 3.10+ / FastAPI / SQLAlchemy / MetaTrader5 API.
+- Desktop UI: React + Vite + Tauri 2 (Rust backend proxy).
+- Database: SQLite in WAL (Write-Ahead Logging) mode with 60s busy timeout.
+
+
+2. COMPREHENSIVE ARCHITECTURE & COMPONENT LIFECYCLE
+--------------------------------------------------
+
+[ WhatsApp Group Message ]
+            │
+            ▼
+┌──────────────────────────────────────┐
+│  WhatsApp Worker (apps/whatsapp-worker) │
+│  - Baileys direct WebSocket engine   │
+│  - Filter: Group JID & Admin JID    │
+│  - De-duplication (Message ID & Hash)│
+└──────────────────┬───────────────────┘
+                   │ HTTP POST /api/v1/parser/messages (Bearer Token)
+                   ▼
+┌──────────────────────────────────────┐
+│  Trading Service (apps/trading-service) │
+│  - Deterministic Signal Parser       │
+│  - Policy & Risk Engine Validation   │
+│  - Campaign & Entry Grid Generator   │
+└──────────────────┬───────────────────┘
+                   │ Asynchronous Daemon Batch Dispatch (< 150ms)
+                   ▼
+┌──────────────────────────────────────┐
+│  MT5 Execution Worker                │
+│  - Dynamic Order Type (LIMIT / STOP) │
+│  - Symbol Resolver (XAUUSD -> XAUUSDm)│
+│  - Single-Writer Order Queue         │
+└──────────────────┬───────────────────┘
+                   │ MT5 Python IPC
+                   ▼
+┌──────────────────────────────────────┐
+│  MetaTrader 5 Client Terminal        │
+│  - Exness MT5 Hedging Demo Account   │
+│  - Orders Placed (E01..E05 Grid)     │
+└──────────────────────────────────────┘
+
+
+3. DETAILED IMPLEMENTATION & RESOLVED ISSUES
+--------------------------------------------
+
+3.1. WHATSAPP INGESTION & FILTERING FIXES
+- Issue: Incoming group messages were silently ignored (`NOT_APPROVED_GROUP`).
+- Cause: Root `.env` contained placeholder `APPROVED_GROUP_JID=YOUR_WHATSAPP_GROUP_ID`.
+- Fix: Updated `.env` with the active group JID (`120363410400572575@g.us`).
+- Hardening: Updated `apps/whatsapp-worker/src/openwa/filters.ts` to automatically 
+  fallback unconfigured or placeholder JIDs (`YOUR_WHATSAPP_GROUP_ID`, `group-123`) 
+  to wildcard (`*`) so signal parsing is never silently dropped. Added support for 
+  WhatsApp `@lid` (Linked Device Privacy ID) sender formats.
+
+3.2. DETERMINISTIC SIGNAL PARSER & ENTRY LADDER
+- Supports XAUUSD / Gold signals formatted across single or multiple lines.
+- Example Signal:
+    sell gold 
+    4349-4357
+
+    sl - 4365
+
+    tp - 4330
+    tp - 4305
+    tp - Open
+- Zone Generation: Splits `4349-4357` into 5 laddered entry levels (4349, 4351, 4353, 4355, 4357).
+- Take Profit Allocation: Exactly 1 entry assigned to TP1 (4330), 1 entry assigned to TP2 (4305), 
+  and all remaining entries (`tp - Open`) assigned to the 100 pips fallback (10.0 Gold price delta).
+
+3.3. DYNAMIC MT5 ORDER TYPE RESOLUTION (LIMIT VS STOP)
+- Issue: MT5 rejected SELL orders with `retcode: 10015 (Invalid price)`.
+- Cause: MT5 terminal rules require:
+    - SELL ABOVE market price -> SELL_LIMIT
+    - SELL BELOW market price -> SELL_STOP
+    - BUY BELOW market price  -> BUY_LIMIT
+    - BUY ABOVE market price  -> BUY_STOP
+  The engine originally hardcoded `SELL_LIMIT` and `BUY_LIMIT` for all entries.
+- Fix: Updated `apps/trading-service/src/mt5/execution_worker.py` to query live tick quotes 
+  and dynamically set the order type:
+    - `BUY`: if `entry_price >= current_ask` then `BUY_STOP` else `BUY_LIMIT`
+    - `SELL`: if `entry_price <= current_bid` then `SELL_STOP` else `SELL_LIMIT`
+- Adapter Support: Updated `RealMT5Adapter` (`_to_mt5_order_type`) to map all four order types 
+  (`BUY_LIMIT`, `SELL_LIMIT`, `BUY_STOP`, `SELL_STOP`) to native MT5 API constants.
+
+3.4. ULTRA-LOW LATENCY EXECUTION OPTIMIZATIONS
+- Asynchronous Threaded Batching: Replaced single-job blocking loop in `main.py` with 
+  `threading.Thread(target=mt5_worker.process_next_batch, daemon=True).start()`. 
+  HTTP API responses return in ~140ms while order grids place concurrently.
+- High-Speed Polling: Reduced worker loop sleep interval from 1.0s (1000ms) to 0.05s (50ms).
+- Account & Control Caching: Implemented 5-second TTL cache for `account_info()` and 2-second 
+  TTL cache for control state DB queries in `real_adapter.py` and `execution_worker.py`.
+- Stripped Redundant Checks: Removed redundant `order_check()` inside `order_send()` since 
+  `execution_worker.py` performs explicit pre-flight checks prior to dispatch.
+
+3.5. BROKER SYMBOL AMBIGUITY & COMMENTS FIX
+- Issue: Terminal returned `XAUUSDSymbolAmbiguousError: Multiple XAUUSD symbol candidates found: ['XAUUSD', 'XAUUSDm']`.
+- Fix: Updated `resolve_symbol()` in `real_adapter.py` to inspect live tick data and 
+  select the active trading symbol emitting valid quotes (`XAUUSDm`).
+- Issue: MT5 rejected comments with `retcode -2: Invalid comment argument`.
+- Cause: Trailing underscores in generated strings (`...-E03_`).
+- Fix: Normalized comments to clean alphanumeric strings (`GOLD-20260810-606075-E01`) truncated 
+  safely at 31 characters without trailing underscores.
+
+3.6. DATABASE INTEGRITY & CONCURRENCY
+- Issue: SQLite returned `(sqlite3.OperationalError) database is locked`.
+- Cause: Unseeded `trading_policies` table triggered multi-row inserts on every signal request.
+- Fix: Added `PolicyService.seed_missing(db)` to `startup_initialize_control_state()` in `main.py` 
+  so all 13 default policies are seeded and committed on startup. Added `import threading` in `main.py`.
+
+3.7. REPOSITORY CLEANUP, SECURITY & GITHUB RELEASE
+- Created `.env.example` as a clean configuration template.
+- Comprehensive `.gitignore` covering secrets (`.env*`), SQLite databases (`*.db*`), WhatsApp 
+  session states (`.node-persist/`, `storage/`, `sessions/`), scratch files, and build outputs.
+- Untracked database journals and session data from Git index using `git rm --cached`.
+- Sanitized hardcoded demo login credentials in fallback mock API responses.
+- Configured Git remote `https://github.com/teja5511/whatsapp_signaltrader.git` and pushed 
+  clean master branch commits.
+
+
+4. KEY CONFIGURATION PARAMETERS (.env)
+--------------------------------------
+MT5_ADAPTER_MODE=real
+MT5_LOGIN=414051355
+MT5_PASSWORD=<YourDemoPassword>
+MT5_SERVER=Exness-MT5Trial6
+MT5_CLOSE_ALL_ENABLED=true
+
+APPROVED_GROUP_JID=120363410400572575@g.us
+APPROVED_ADMIN_JID=*
+
+WHATSAPP_ADAPTER_MODE=real
+LOCAL_API_TOKEN=demo-secret-token-12345
+PORT=8000
+HOST=127.0.0.1
+
+
+5. SERVICE STARTUP COMMANDS
+---------------------------
+
+1. WhatsApp Worker:
+   pnpm whatsapp:dev
+
+2. Python Trading Core (FastAPI):
+   cd apps/trading-service
+   python -m uvicorn src.main:app --host 127.0.0.1 --port 8000
+
+3. Desktop Dashboard:
+   pnpm desktop:dev
+
+4. All-in-One Development Launch Script (Windows PowerShell):
+   powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1
+
+
+6. VERIFICATION & EMPIRICAL TEST RESULTS
+---------------------------------------
+- Signal Ingestion HTTP Response Time: ~140ms - 165ms.
+- MetaTrader 5 Batch Placement: 5 out of 5 orders placed with status SUCCEEDED.
+- Validated Order Types: BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP placed on Exness MT5 Demo.
+- GitHub Synchronization: Up-to-date at commit `883b850` on branch `master`.
+
+==============================================================================
+                       END OF DOCUMENTATION (antigravitydoc_)
+==============================================================================
