@@ -134,8 +134,13 @@ def validate_campaign_risk(
     past_policy = policies.current_price_policy.zone_passed_value
     zone_checks_active = "NO_CURRENT_PRICE_CHECK" not in (inside_policy, past_policy)
 
-    if position == "UNKNOWN" and zone_checks_active:
-        # We cannot prove the market is outside the zone, so we must not plan.
+    # A missing quote only blocks policies that would reject the signal based on
+    # where price sits. The ladder is still planned, and each order is a limit
+    # or a stop when it is sent.
+    price_required = inside_policy in (
+        "BLOCK_IF_INSIDE_ZONE", "REJECT_STALE", "SKIP_PASSED_LEVELS", "UNRESOLVED",
+    ) or past_policy in ("BLOCK_IF_ZONE_PASSED", "CANCEL_AS_MISSED", "UNRESOLVED")
+    if position == "UNKNOWN" and zone_checks_active and price_required:
         issues.append({
             "code": CURRENT_PRICE_UNAVAILABLE,
             "severity": "ERROR",
@@ -161,17 +166,16 @@ def validate_campaign_risk(
                 "severity": "ERROR",
                 "message": f"Signal rejected as stale: live price {current_price} is already inside the entry zone.",
             })
-        elif inside_policy in ("LIMIT_STOP_SPLIT", "SKIP_PASSED_LEVELS"):
-            # Both require order-type variation the demo executor does not yet
-            # support, so they are reported rather than silently downgraded.
+        elif inside_policy == "SKIP_PASSED_LEVELS":
             issues.append({
                 "code": PRICE_INSIDE_ZONE_BLOCKED,
                 "severity": "ERROR",
                 "message": (
-                    f"Policy '{inside_policy}' requires stop-order placement, which the "
-                    "demo execution worker does not support in this release."
+                    "Policy 'SKIP_PASSED_LEVELS' is not used. "
+                    "The full ladder is placed, and each level is a limit or a stop."
                 ),
             })
+        # LIMIT_STOP_SPLIT and PLACE_REMAINING_ENTRIES plan every level.
 
     if position == "PAST_ZONE":
         if past_policy in ("BLOCK_IF_ZONE_PASSED", "UNRESOLVED"):

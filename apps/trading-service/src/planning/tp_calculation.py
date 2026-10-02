@@ -21,14 +21,12 @@ def calculate_entry_tp(
     tick = spec.tick_size_decimal()
     direction_upper = direction.upper()
 
+    if tp_category == "TP_1" and signal_tp1 is None:
+        return calculate_entry_tp(
+            direction, entry_price, "TP_100", None, None, pip_policy, spec
+        )
+
     if tp_category == "TP_1":
-        if signal_tp1 is None:
-            issues.append({
-                "code": "TP1_MISSING",
-                "severity": "ERROR",
-                "message": "Signal lacks explicit TP1 target for TP_1 category entry"
-            })
-            return None, issues
 
         # Validate directional alignment
         if direction_upper == "BUY" and signal_tp1 <= entry_price:
@@ -46,14 +44,12 @@ def calculate_entry_tp(
 
         return round_to_tick(signal_tp1, tick), issues
 
+    elif tp_category == "TP_2" and signal_tp2 is None:
+        return calculate_entry_tp(
+            direction, entry_price, "TP_100", signal_tp1, None, pip_policy, spec
+        )
+
     elif tp_category == "TP_2":
-        if signal_tp2 is None:
-            issues.append({
-                "code": "TP2_MISSING",
-                "severity": "ERROR",
-                "message": "Signal lacks explicit TP2 target for TP_2 category entry"
-            })
-            return None, issues
 
         if direction_upper == "BUY" and signal_tp2 <= entry_price:
             issues.append({

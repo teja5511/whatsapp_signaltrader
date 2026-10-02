@@ -548,12 +548,6 @@ def parse_and_persist_message(req: ParseRawMessageRequest):
     # 2. Trigger Central Orchestration Coordinator
     orch_res = coordinator.process_raw_message_id(req.messageId)
 
-    # 3. Instant Execution Dispatch (<15ms MT5 order placement)
-    try:
-        threading.Thread(target=mt5_worker.process_next_batch, daemon=True).start()
-    except Exception as e:
-        logger.warning("MT5 worker instant dispatch exception: %s", e)
-
     category = parse_res.get("category")
     command = parse_res.get("command")
     signal = parse_res.get("signal")

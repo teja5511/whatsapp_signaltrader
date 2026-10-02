@@ -13,11 +13,11 @@ def test_delayed_tp_updates_and_reentry():
     parse_service = MessageParsingService(session_factory=SessionLocal)
     camp_service = CampaignService(session_factory=SessionLocal)
 
-    # 1. Incomplete signal -> WAITING_FOR_TP
+    # 1. Zone and stop are enough to trade. Missing targets use the 100-pip fallback.
     raw_sig = "Gold Sell Limit\n3990-3998\nSl - 4008"
     parse_service.parse_and_persist(raw_text=raw_sig, message_id="msg-parent-sig", group_id="g1", sender_id="s1")
     c_parent, _ = camp_service.create_campaign_from_message("msg-parent-sig")
-    assert c_parent["current_state"] == "WAITING_FOR_TP"
+    assert c_parent["current_state"] == "AWAITING_CONFIRMATION"
 
     # 2. Delayed TP1 command -> updates TP1
     parse_service.parse_and_persist(raw_text="TP1 3960", message_id="msg-tp1", group_id="g1", sender_id="s1")

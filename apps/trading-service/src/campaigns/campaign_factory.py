@@ -6,7 +6,7 @@ from typing import Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from src.database.models import CampaignModel, SignalModel, AppSettingModel
 from src.domain.schemas import AppSettingsDTO
-from src.campaigns.constants import STATE_WAITING_FOR_TP, STATE_AWAITING_CONFIRMATION
+from src.campaigns.constants import STATE_AWAITING_CONFIRMATION
 
 class CampaignFactory:
     @staticmethod
@@ -40,16 +40,9 @@ class CampaignFactory:
         Creates CampaignModel from signal.
         Returns (campaign_model, initial_state)
         """
-        # Determine initial state: WAITING_FOR_TP only if both TP1 and TP2 are missing
-        is_missing_tp = (signal_rec.tp1 is None) and (signal_rec.tp2 is None)
-        initial_state = STATE_WAITING_FOR_TP if is_missing_tp else STATE_AWAITING_CONFIRMATION
-
-        # If TP1 is present but TP2 is missing, fill TP2 with TP1 target
-        if signal_rec.tp1 is not None and signal_rec.tp2 is None:
-            if signal_rec.direction == "BUY":
-                signal_rec.tp2 = signal_rec.tp1 + Decimal("10.00")
-            else:
-                signal_rec.tp2 = signal_rec.tp1 - Decimal("10.00")
+        # A zone and a stop are enough to place the ladder. Missing targets
+        # use the fixed 100-pip distance from each entry when the plan is built.
+        initial_state = STATE_AWAITING_CONFIRMATION
 
         entry_count = settings.entry_count
         lot_per_entry = float(settings.lot_per_entry)

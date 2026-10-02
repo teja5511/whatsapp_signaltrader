@@ -43,4 +43,6 @@ def test_incomplete_signal_initial_state_waiting_for_tp():
     )
 
     c_dict, _ = camp_service.create_campaign_from_message("msg-sig-2")
-    assert c_dict["current_state"] == "WAITING_FOR_TP"
+    assert c_dict["current_state"] == "AWAITING_CONFIRMATION"
+    assert c_dict["tp1"] is None
+    assert c_dict["tp2"] is None

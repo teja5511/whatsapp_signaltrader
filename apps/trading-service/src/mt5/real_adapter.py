@@ -1,6 +1,7 @@
 """Real MetaTrader 5 Python Package Adapter with Strict Demo-Only Safety Gates."""
 
 import os
+import time
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -66,6 +67,10 @@ class RealMT5Adapter(MT5AdapterInterface):
         self._health_state = HEALTH_NOT_INITIALIZED
         self._cached_account_info: Optional[Mt5AccountInfoDTO] = None
         self._cached_account_info_time: float = 0.0
+        self._resolved_symbol: Optional[Mt5SymbolResolutionDTO] = None
+        self._resolved_symbol_at: float = 0.0
+        self._tick_cache: Optional[Mt5TickDTO] = None
+        self._tick_cache_at: float = 0.0
 
     @property
     def mode(self) -> str:
@@ -95,6 +100,8 @@ class RealMT5Adapter(MT5AdapterInterface):
         if env_server:
             init_kwargs["server"] = env_server
 
+        self._resolved_symbol = None
+        self._tick_cache = None
         ok = mt5.initialize(**init_kwargs)
         if not ok:
             err = mt5.last_error()
@@ -128,9 +135,10 @@ class RealMT5Adapter(MT5AdapterInterface):
             self.shutdown()
             raise MT5ServerNotAllowedError(acc_dto.server)
 
-        # Gate 5: Terminal & Account trade permission
-        term_dto = self.terminal_info()
-        if not term_dto.trade_allowed or not acc_dto.trade_allowed:
+        # Gate 5: The account itself must allow trading. The terminal AutoTrading
+        # button is checked when the order is sent; turning it off must not
+        # drop the connection or block planning.
+        if not acc_dto.trade_allowed:
             self._health_state = HEALTH_TRADING_NOT_ALLOWED
             self.shutdown()
             return False
@@ -159,6 +167,8 @@ class RealMT5Adapter(MT5AdapterInterface):
                 pass
         self._initialized = False
         self._health_state = HEALTH_NOT_INITIALIZED
+        self._resolved_symbol = None
+        self._tick_cache = None
 
     def is_initialized(self) -> bool:
         return self._initialized and self._health_state == HEALTH_READY
@@ -250,6 +260,16 @@ class RealMT5Adapter(MT5AdapterInterface):
         if self._symbol_override:
             return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=self._symbol_override, is_resolved=True, source="OVERRIDE")
 
+        now = time.time()
+        cached = self._resolved_symbol
+        if (
+            cached is not None
+            and cached.is_resolved
+            and cached.canonical_symbol == canonical
+            and (now - self._resolved_symbol_at) < 300.0
+        ):
+            return cached
+
         available = self.list_symbols()
         matches = [s for s in available if s.upper().startswith(canonical) or "GOLD" in s.upper()]
 
@@ -264,15 +284,20 @@ class RealMT5Adapter(MT5AdapterInterface):
                 pass
 
         if len(active_matches) == 1:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=active_matches[0], is_resolved=True, source="ACTIVE_TICK_MATCH")
+            resolved = Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=active_matches[0], is_resolved=True, source="ACTIVE_TICK_MATCH")
         elif len(matches) == 1:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=matches[0], is_resolved=True, source="SUFFIX_VARIANT")
+            resolved = Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=matches[0], is_resolved=True, source="SUFFIX_VARIANT")
         elif canonical in available:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=canonical, is_resolved=True, source="EXACT_MATCH")
+            resolved = Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=canonical, is_resolved=True, source="EXACT_MATCH")
         elif len(matches) > 1:
-            return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=matches[0], is_resolved=True, source="FIRST_MATCH")
+            resolved = Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol=matches[0], is_resolved=True, source="FIRST_MATCH")
+        else:
+            resolved = Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol="", is_resolved=False, source="NOT_FOUND")
 
-        return Mt5SymbolResolutionDTO(canonical_symbol=canonical, broker_symbol="", is_resolved=False, source="NOT_FOUND")
+        if resolved.is_resolved:
+            self._resolved_symbol = resolved
+            self._resolved_symbol_at = now
+        return resolved
 
     def symbol_specification(self, symbol: str = "XAUUSD") -> Mt5SymbolSpecificationDTO:
         if not HAS_MT5_PACKAGE:
@@ -650,6 +675,10 @@ class RealMT5Adapter(MT5AdapterInterface):
     def symbol_tick(self, symbol: str = CANONICAL_SYMBOL_XAUUSD) -> Optional[Mt5TickDTO]:
         if not HAS_MT5_PACKAGE:
             return None
+        now = time.time()
+        cached_tick = self._tick_cache
+        if cached_tick is not None and (now - self._tick_cache_at) < 0.5:
+            return cached_tick
         if not self.is_initialized():
             try:
                 self.initialize()
@@ -664,11 +693,14 @@ class RealMT5Adapter(MT5AdapterInterface):
         tick = mt5.symbol_info_tick(resolved)
         if tick is None or not getattr(tick, "bid", 0) or not getattr(tick, "ask", 0):
             return None
-        return Mt5TickDTO(
+        cached = Mt5TickDTO(
             symbol=resolved,
             bid=Decimal(str(tick.bid)),
             ask=Decimal(str(tick.ask)),
         )
+        self._tick_cache = cached
+        self._tick_cache_at = now
+        return cached
 
     def history_orders_get(self, magic_number: Optional[int] = None, limit: int = 100) -> List[Mt5HistoryOrderDTO]:
         if not HAS_MT5_PACKAGE or not self.is_initialized():

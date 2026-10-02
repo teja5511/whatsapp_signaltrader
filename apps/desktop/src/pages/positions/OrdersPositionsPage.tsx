@@ -1,12 +1,27 @@
 import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../api/apiClient";
-import { Card, CardHeader, CardTitle } from "../../components/ui/Card";
+import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { useUiStore } from "../../stores/uiStore";
 import { CONTROL_PHRASES } from "../../lib/constants";
-import { ListOrdered, RefreshCw, AlertTriangle, Layers, History, ShieldAlert } from "lucide-react";
+import { RefreshCw, ShieldAlert } from "lucide-react";
+
+function asNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatAmount(value: unknown, digits = 2): string {
+  const n = asNumber(value);
+  return n == null ? "-" : n.toFixed(digits);
+}
+
+function asList<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
 
 export const OrdersPositionsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"orders" | "positions" | "history" | "jobs">("orders");
@@ -35,6 +50,11 @@ export const OrdersPositionsPage: React.FC = () => {
     queryFn: () => apiClient.listExecutionJobs().catch(() => []),
     refetchInterval: 5000,
   });
+
+  const orderRows = asList<any>(orders);
+  const positionRows = asList<any>(positions);
+  const historyRows = asList<any>(history);
+  const jobRows = asList<any>(jobs);
 
   const handleEmergencyCloseAll = () => {
     openConfirmModal({
@@ -73,25 +93,25 @@ export const OrdersPositionsPage: React.FC = () => {
           onClick={() => setActiveTab("orders")}
           className={`px-4 py-2.5 border-b-2 font-mono transition-colors ${activeTab === "orders" ? "border-sky-500 text-sky-400 bg-sky-950/20" : "border-transparent text-slate-400 hover:text-slate-200"}`}
         >
-          Pending Orders ({(orders || []).length})
+          Pending Orders ({orderRows.length})
         </button>
         <button
           onClick={() => setActiveTab("positions")}
           className={`px-4 py-2.5 border-b-2 font-mono transition-colors ${activeTab === "positions" ? "border-emerald-500 text-emerald-400 bg-emerald-950/20" : "border-transparent text-slate-400 hover:text-slate-200"}`}
         >
-          Open Positions ({(positions || []).length})
+          Open Positions ({positionRows.length})
         </button>
         <button
           onClick={() => setActiveTab("history")}
           className={`px-4 py-2.5 border-b-2 font-mono transition-colors ${activeTab === "history" ? "border-indigo-500 text-indigo-400 bg-indigo-950/20" : "border-transparent text-slate-400 hover:text-slate-200"}`}
         >
-          Trade History ({(history || []).length})
+          Trade History ({historyRows.length})
         </button>
         <button
           onClick={() => setActiveTab("jobs")}
           className={`px-4 py-2.5 border-b-2 font-mono transition-colors ${activeTab === "jobs" ? "border-amber-500 text-amber-400 bg-amber-950/20" : "border-transparent text-slate-400 hover:text-slate-200"}`}
         >
-          Execution Jobs ({(jobs || []).length})
+          Execution Jobs ({jobRows.length})
         </button>
       </div>
 
@@ -113,22 +133,22 @@ export const OrdersPositionsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {(orders || []).length === 0 ? (
+                {orderRows.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-6 text-center text-slate-500">
-                      No active pending limit orders.
+                      No active pending orders.
                     </td>
                   </tr>
                 ) : (
-                  (orders || []).map((o) => (
+                  orderRows.map((o) => (
                     <tr key={o.ticket} className="hover:bg-slate-800/40">
                       <td className="p-3 font-bold text-slate-200">#{o.ticket}</td>
                       <td className="p-3 text-slate-300">{o.symbol}</td>
-                      <td className="p-3 font-bold text-sky-400">{o.type}</td>
-                      <td className="p-3 text-slate-200">{o.volume?.toFixed(2)} Lot</td>
-                      <td className="p-3 font-bold text-emerald-400">${o.price_open?.toFixed(2)}</td>
-                      <td className="p-3 text-rose-300">${o.sl?.toFixed(2)}</td>
-                      <td className="p-3 text-emerald-300">${o.tp?.toFixed(2)}</td>
+                      <td className="p-3 font-bold text-sky-400">{o.type || o.order_type}</td>
+                      <td className="p-3 text-slate-200">{formatAmount(o.volume)} Lot</td>
+                      <td className="p-3 font-bold text-emerald-400">${formatAmount(o.price_open ?? o.price)}</td>
+                      <td className="p-3 text-rose-300">${formatAmount(o.sl ?? o.stop_loss)}</td>
+                      <td className="p-3 text-emerald-300">${formatAmount(o.tp ?? o.take_profit)}</td>
                       <td className="p-3"><Badge status={o.state || "PLACED"} /></td>
                     </tr>
                   ))
@@ -156,27 +176,30 @@ export const OrdersPositionsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {(positions || []).length === 0 ? (
+                {positionRows.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="p-6 text-center text-slate-500">
                       No open positions.
                     </td>
                   </tr>
                 ) : (
-                  (positions || []).map((p) => (
+                  positionRows.map((p) => {
+                    const profit = asNumber(p.profit) ?? 0;
+                    return (
                     <tr key={p.ticket} className="hover:bg-slate-800/40">
                       <td className="p-3 font-bold text-slate-200">#{p.ticket}</td>
                       <td className="p-3 text-slate-300">{p.symbol}</td>
-                      <td className="p-3 font-bold text-emerald-400">{p.type}</td>
-                      <td className="p-3 text-slate-200">{p.volume?.toFixed(2)} Lot</td>
-                      <td className="p-3 text-slate-200">${p.price_open?.toFixed(2)}</td>
-                      <td className="p-3 text-slate-200">${p.price_current?.toFixed(2)}</td>
-                      <td className={`p-3 font-bold ${p.profit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        ${p.profit?.toFixed(2)} USD
+                      <td className="p-3 font-bold text-emerald-400">{p.type || p.position_type}</td>
+                      <td className="p-3 text-slate-200">{formatAmount(p.volume)} Lot</td>
+                      <td className="p-3 text-slate-200">${formatAmount(p.price_open ?? p.price)}</td>
+                      <td className="p-3 text-slate-200">${formatAmount(p.price_current)}</td>
+                      <td className={`p-3 font-bold ${profit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        ${formatAmount(profit)} USD
                       </td>
-                      <td className="p-3 text-slate-400">${p.sl?.toFixed(2)} / ${p.tp?.toFixed(2)}</td>
+                      <td className="p-3 text-slate-400">${formatAmount(p.sl ?? p.stop_loss)} / ${formatAmount(p.tp ?? p.take_profit)}</td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -186,8 +209,41 @@ export const OrdersPositionsPage: React.FC = () => {
 
       {activeTab === "history" && (
         <Card>
-          <div className="p-6 text-center text-slate-500 text-xs">
-            Trade history populated directly from MT5 terminal history database.
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead className="bg-slate-950 text-slate-400 uppercase text-[10px]">
+                <tr>
+                  <th className="p-3">Ticket</th>
+                  <th className="p-3">Symbol</th>
+                  <th className="p-3">Type</th>
+                  <th className="p-3">Volume</th>
+                  <th className="p-3">Price</th>
+                  <th className="p-3">State</th>
+                  <th className="p-3">Comment</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {historyRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-6 text-center text-slate-500">
+                      No trade history yet.
+                    </td>
+                  </tr>
+                ) : (
+                  historyRows.map((h) => (
+                    <tr key={h.ticket} className="hover:bg-slate-800/40">
+                      <td className="p-3 font-bold text-slate-200">#{h.ticket}</td>
+                      <td className="p-3 text-slate-300">{h.symbol}</td>
+                      <td className="p-3 text-sky-400">{h.order_type || h.type}</td>
+                      <td className="p-3">{formatAmount(h.volume)}</td>
+                      <td className="p-3">${formatAmount(h.price ?? h.price_open)}</td>
+                      <td className="p-3"><Badge status={h.state || "HISTORY"} /></td>
+                      <td className="p-3 text-slate-400">{h.comment || "-"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </Card>
       )}
@@ -206,20 +262,20 @@ export const OrdersPositionsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {(jobs || []).length === 0 ? (
+                {jobRows.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="p-6 text-center text-slate-500">
                       No execution jobs recorded.
                     </td>
                   </tr>
                 ) : (
-                  (jobs || []).map((j) => (
+                  jobRows.map((j) => (
                     <tr key={j.id} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-bold text-slate-200">{j.id.substring(0, 8)}...</td>
-                      <td className="p-3 text-sky-400">{j.batch_id?.substring(0, 8)}...</td>
+                      <td className="p-3 font-bold text-slate-200">{String(j.id).slice(0, 8)}...</td>
+                      <td className="p-3 text-sky-400">{j.batch_id ? String(j.batch_id).slice(0, 8) : "-"}...</td>
                       <td className="p-3 text-slate-300">{j.operation_type}</td>
                       <td className="p-3"><Badge status={j.status} /></td>
-                      <td className="p-3 text-slate-400">{new Date(j.created_at).toLocaleTimeString()}</td>
+                      <td className="p-3 text-slate-400">{j.created_at ? new Date(j.created_at).toLocaleTimeString() : "-"}</td>
                     </tr>
                   ))
                 )}

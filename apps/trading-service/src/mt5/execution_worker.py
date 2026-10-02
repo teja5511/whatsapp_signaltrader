@@ -14,14 +14,14 @@ from sqlalchemy.orm import Session
 from src.database.engine import SessionLocal
 from src.database.unit_of_work import UnitOfWork
 from src.database.models import (
-    CampaignModel, PlannedEntryModel, MT5ExecutionJobModel, MT5OrderCheckModel,
+    CampaignModel, PlannedEntryModel, MT5ExecutionJobModel,
     MT5ExecutionAttemptModel, MT5OrderRecordModel, MT5PositionRecordModel,
     ControlStateModel, WorkerHeartbeatModel,
 )
 from src.database.types import coerce_decimal
 from src.mt5.adapter import MT5AdapterInterface
 from src.mt5.execution_queue import MT5ExecutionQueue
-from src.mt5.contracts import Mt5OrderCheckRequestDTO, Mt5OrderSendRequestDTO
+from src.mt5.contracts import Mt5OrderSendRequestDTO
 from src.campaigns.constants import (
     STATE_PLACING_ORDERS, STATE_PENDING, STATE_PARTIALLY_PLACED, STATE_FAILED,
     REASON_ALL_ORDERS_PLACED, REASON_PARTIAL_PLACEMENT, REASON_PLACEMENT_FAILED,
@@ -61,6 +61,7 @@ class MT5ExecutionWorker:
         self._last_halted_check_time: float = 0.0
         self._last_halted_value: bool = False
         self._last_heartbeat_time: float = 0.0
+        self._job_lock = threading.Lock()
 
     # -- background loop ----------------------------------------------------
 
@@ -168,6 +169,14 @@ class MT5ExecutionWorker:
         Pulls and processes one queued trade execution job safely.
         Returns True if a job was processed, False if queue was empty.
         """
+        if not self._job_lock.acquire(blocking=False):
+            return False
+        try:
+            return self._process_next_job_locked()
+        finally:
+            self._job_lock.release()
+
+    def _process_next_job_locked(self) -> bool:
         with UnitOfWork(session_factory=self.session_factory) as uow:
             job = MT5ExecutionQueue.claim_next_job(
                 uow.db, worker_id=self.worker_id, lease_seconds=JOB_LEASE_SECONDS
@@ -185,8 +194,6 @@ class MT5ExecutionWorker:
 
                 if not self.adapter.is_initialized():
                     self.adapter.initialize()
-
-                acc_info = self.adapter.account_info()
 
                 campaign = uow.campaigns.get_by_id(campaign_id)
                 if not campaign:
@@ -226,39 +233,6 @@ class MT5ExecutionWorker:
                 comment = f"{campaign.campaign_code}-E{(entry.ladder_index + 1):02d}"
                 magic = campaign.magic_number
 
-                check_req = Mt5OrderCheckRequestDTO(
-                    symbol="XAUUSD",
-                    volume=coerce_decimal(entry.volume),
-                    order_type=order_type_str,
-                    price=coerce_decimal(entry.price),
-                    stop_loss=coerce_decimal(entry.stop_loss),
-                    take_profit=coerce_decimal(entry.take_profit) if entry.take_profit is not None else None,
-                    magic_number=magic,
-                    comment=comment,
-                )
-
-                check_res = self.adapter.order_check(check_req)
-
-                check_rec = MT5OrderCheckModel(
-                    id=uuid4_str(),
-                    job_id=job_id,
-                    request_json=json.dumps(check_req.model_dump(mode="json")),
-                    retcode=check_res.retcode,
-                    retcode_name=check_res.retcode_name,
-                    is_valid=check_res.is_valid,
-                    comment=check_res.comment,
-                    margin=check_res.margin,
-                    margin_free=check_res.margin_free,
-                    checked_at=datetime.now(timezone.utc)
-                )
-                uow.db.add(check_rec)
-                uow.db.flush()
-
-                if not check_res.is_valid:
-                    MT5ExecutionQueue.fail_job(uow.db, job_id, "ORDER_CHECK_FAILED", check_res.comment)
-                    self._update_campaign_execution_state(uow.db, campaign)
-                    return True
-
                 send_req = Mt5OrderSendRequestDTO(
                     symbol="XAUUSD",
                     volume=coerce_decimal(entry.volume),
@@ -271,13 +245,14 @@ class MT5ExecutionWorker:
                     idempotency_key=job.idempotency_key
                 )
 
+                uow.db.commit()
                 send_res = self.adapter.order_send(send_req)
 
                 uow.db.add(MT5ExecutionAttemptModel(
                     id=uuid4_str(),
                     job_id=job_id,
                     attempt_number=job.attempt_count,
-                    order_check_id=check_rec.id,
+                    order_check_id=None,
                     retcode=send_res.retcode,
                     retcode_name=send_res.retcode_name,
                     deal_ticket=send_res.deal_ticket,
