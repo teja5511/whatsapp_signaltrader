@@ -22,11 +22,21 @@ export const WhatsAppPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // 1. Worker & Configuration Query
-  const { data: status, refetch: refetchStatus } = useQuery({
+  const { data: status, refetch: refetchStatus, isError: statusError } = useQuery({
     queryKey: ["waStatus"],
-    queryFn: () => apiClient.getWhatsAppStatus().catch(() => ({ connected: false, mode: "baileys_node" })),
-    refetchInterval: 5000,
+    queryFn: () => apiClient.getWhatsAppStatus(),
+    refetchInterval: 3000,
+    retry: false,
   });
+
+  const { data: qr } = useQuery({
+    queryKey: ["waQr"],
+    queryFn: () => apiClient.getWhatsAppQr(),
+    refetchInterval: 3000,
+    retry: false,
+  });
+
+  const linked = status?.connection_state === "READY" && !qr?.qr_image;
 
   const { data: config, refetch: refetchConfig } = useQuery({
     queryKey: ["waConfig"],
@@ -55,7 +65,21 @@ export const WhatsAppPage: React.FC = () => {
 
   // 3. Computed Datasets & Deduplication
   const groupsList = useMemo(() => Array.isArray(rawGroups) ? rawGroups : [], [rawGroups]);
-  const configuredGroupsList = useMemo(() => Array.isArray(selectedGroups) ? selectedGroups : [], [selectedGroups]);
+  const configuredGroupsList = useMemo(() => {
+    const rows = Array.isArray(selectedGroups) ? [...selectedGroups] : [];
+    const envJid = config?.approved_group_id;
+    if (envJid && String(envJid).endsWith("@g.us") && !rows.some((g: any) => (g.jid || g.group_id) === envJid)) {
+      rows.unshift({
+        id: envJid,
+        jid: envJid,
+        name: config?.approved_group_display_name || "Signal group",
+        enabled: true,
+        lastSignalTime: null,
+        messagesToday: 0,
+      });
+    }
+    return rows;
+  }, [selectedGroups, config]);
 
   const configuredJidsSet = useMemo(() => {
     return new Set(configuredGroupsList.map((g: any) => g.jid || g.group_id));
@@ -229,6 +253,47 @@ export const WhatsAppPage: React.FC = () => {
           <RefreshCw className="w-3.5 h-3.5" /> Refresh Groups
         </Button>
       </div>
+
+      <Card className="font-mono">
+        <CardHeader>
+          <CardTitle className="text-emerald-400 flex items-center gap-2">
+            <MessageSquare className="w-4 h-4" /> WhatsApp login
+          </CardTitle>
+          <CardDescription>
+            {linked
+              ? "This WhatsApp account is linked. New group messages are accepted from here."
+              : "Scan the code with WhatsApp on your phone: Linked devices, then Link a device."}
+          </CardDescription>
+        </CardHeader>
+        <div className="border-t border-slate-800 pt-4 flex flex-col sm:flex-row sm:items-center gap-6">
+          {linked ? (
+            <div className="flex items-center gap-3">
+              <Badge status="READY" />
+              <span className="text-xs text-slate-300">Connected</span>
+              <Button variant="danger" size="sm" onClick={handleResetSession}>Log out</Button>
+            </div>
+          ) : qr?.qr_image ? (
+            <img
+              src={qr.qr_image}
+              alt="WhatsApp login QR code"
+              className="w-56 h-56 bg-white rounded-lg p-2"
+            />
+          ) : (
+            <div className="w-56 h-56 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-center text-xs text-slate-400 px-4">
+              {statusError
+                ? "WhatsApp worker is not running. Start the app with pnpm start."
+                : qr?.qr_state === "AVAILABLE"
+                ? "The login code arrived but could not be drawn. Refresh this page."
+                : "Waiting for a login code from WhatsApp..."}
+            </div>
+          )}
+          {!linked && (
+            <p className="text-xs text-slate-400 max-w-md">
+              Keep this page open. The code refreshes on its own. After the scan succeeds, your groups appear below.
+            </p>
+          )}
+        </div>
+      </Card>
 
       {saveSuccessMsg && (
         <div className="p-3 rounded bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 text-xs font-mono flex items-center gap-2">

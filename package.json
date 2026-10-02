@@ -4,6 +4,7 @@
   "private": true,
   "description": "WhatsApp XAUUSD Signal Trading Bot Monorepo",
   "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File ./scripts/run-all.ps1",
     "dev": "powershell -ExecutionPolicy Bypass -File ./scripts/dev.ps1",
     "validate": "powershell -ExecutionPolicy Bypass -File ./scripts/validate.ps1",
     "test": "pnpm --recursive run test",

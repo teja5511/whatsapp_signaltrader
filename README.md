@@ -98,29 +98,10 @@ Update `.env` with:
 
 ## 🚀 Running the Bot
 
-### 1. Start the WhatsApp Worker
-Connect the worker to WhatsApp Web. On first launch, a QR code will print in the console—scan it with your WhatsApp mobile app:
-```bash
-pnpm whatsapp:dev
-```
+From the project folder, one command starts MetaTrader, WhatsApp, and the dashboard, then opens the interface:
 
-### 2. Start the Python Backend
-Navigate into the trading service directory and launch the FastAPI web server:
-
-**Step-by-step (PowerShell / Windows Terminal):**
 ```powershell
-cd apps/trading-service
-.\.venv\Scripts\activate
-python -m uvicorn src.main:app --host 127.0.0.1 --port 8000
+pnpm start
 ```
 
-**Single-line Copy & Paste (PowerShell):**
-```powershell
-cd apps/trading-service; $env:MT5_ADAPTER_MODE="real"; python -m uvicorn src.main:app --host 127.0.0.1 --port 8000
-```
-
-### 3. Launch the Desktop Dashboard
-Run the Tauri app to open the visual UI console:
-```bash
-pnpm desktop:dev
-```
+Link WhatsApp on the dashboard **WhatsApp** page. The QR code is shown there. On your phone open WhatsApp, then **Linked devices**, then **Link a device**, and scan the code.

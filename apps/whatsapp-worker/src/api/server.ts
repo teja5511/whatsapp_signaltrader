@@ -216,9 +216,22 @@ export function createWorkerApiServer(
         if (!config.qrExposeOverLocalApi) {
           return sendJson(403, { error: "QR API exposition disabled by configuration." });
         }
+        let qrImage: string | null = null;
+        let qrError: string | null = null;
+        if (globalWorkerState.qrPayload) {
+          try {
+            const QRCode = require("qrcode");
+            qrImage = await QRCode.toDataURL(globalWorkerState.qrPayload, { margin: 1, width: 280 });
+          } catch (err: any) {
+            qrError = err?.message || "Could not draw the QR code.";
+            console.error("[WhatsApp] QR image failed", err);
+          }
+        }
         return sendJson(200, {
           qr_state: globalWorkerState.qrState,
-          qr_payload: globalWorkerState.qrPayload,
+          connection_state: globalWorkerState.connectionState,
+          qr_image: qrImage,
+          qr_error: qrError,
           qr_expires_at: globalWorkerState.qrExpiresAt
         });
       }

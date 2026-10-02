@@ -31,14 +31,7 @@ export class WhatsAppWorkerApp {
     this.paths.sessionsDir,
     (qrPayload) => {
       globalWorkerState.setQrState(QrState.AVAILABLE, qrPayload, this.config.qrTtlSeconds);
-      console.log("\n================ WHATSAPP QR CODE REQUIRED ================");
-      try {
-        const qrcode = require("qrcode-terminal");
-        qrcode.generate(qrPayload, { small: true });
-      } catch {
-        console.log("QR Code Payload:", qrPayload);
-      }
-      console.log("===========================================================\n");
+      console.log("[WhatsApp] QR ready. Scan it on the dashboard WhatsApp page.");
     }
   );
 
@@ -63,6 +56,9 @@ export class WhatsAppWorkerApp {
     if (this.config.approvedGroupId) {
       globalWorkerState.approvedGroupId = this.config.approvedGroupId;
       globalWorkerState.approvedGroupDisplayName = this.config.approvedGroupId;
+      if (this.config.approvedGroupId.endsWith("@g.us")) {
+        selectedGroupsDb.add(this.config.approvedGroupId, "Signal group");
+      }
     }
     if (this.config.approvedAdminId) {
       globalWorkerState.approvedAdminId = this.config.approvedAdminId;
@@ -154,11 +150,9 @@ export class WhatsAppWorkerApp {
       this.triggerSpoolDelivery();
     });
 
-    // 4. Initialize OpenWA Adapter
+    // 4. Initialize OpenWA Adapter. READY is set only after WhatsApp accepts the session.
+    globalWorkerState.setConnectionState(ConnectionState.STARTING);
     await this.adapter.initialize();
-    globalWorkerState.sessionAuthenticated = true;
-    globalWorkerState.adminRoleVerified = true;
-    globalWorkerState.setConnectionState(ConnectionState.READY);
 
     // 5. Start HTTP REST API server
     return new Promise((resolve) => {

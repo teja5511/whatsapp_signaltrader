@@ -1,6 +1,7 @@
 import { OpenWAAdapterInterface } from "./adapter";
 import { GroupSummary, GroupAdminSummary } from "../contracts";
 import { ConnectionState, QrState } from "../constants";
+import { globalWorkerState } from "../state/worker-state";
 
 export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
   public readonly mode = "real";
@@ -17,6 +18,8 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
   ) {}
 
   private knownGroups = new Map<string, GroupSummary>();
+  private authPath = "";
+  private freshLoginTimer: ReturnType<typeof setTimeout> | null = null;
 
   async initialize(): Promise<boolean> {
     try {
@@ -24,10 +27,8 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
       console.log("[WhatsApp Worker] Initializing Baileys Direct Connection (No Chrome browser required)...");
 
       let baileys: any;
-      let qrcode: any;
       try {
         baileys = require("@whiskeysockets/baileys");
-        qrcode = require("qrcode-terminal");
       } catch (err) {
         console.error("[Baileys Import Error]", err);
         this.connectionState = ConnectionState.ERROR;
@@ -38,6 +39,7 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
       const { useMultiFileAuthState, fetchLatestBaileysVersion } = baileys;
 
       const authPath = this.sessionDir || `./data/sessions/${this.sessionName}_baileys`;
+      this.authPath = authPath;
       const { state, saveCreds } = await useMultiFileAuthState(authPath);
       const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
@@ -82,15 +84,17 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
 
         if (qr) {
           this.qrState = QrState.AVAILABLE;
-          console.log("\n=================== SCAN WHATSAPP QR CODE ===================");
-          qrcode.generate(qr, { small: true });
-          console.log("=============================================================\n");
+          globalWorkerState.setConnectionState(ConnectionState.WAITING_FOR_QR);
           if (this.qrCallback) this.qrCallback(qr);
         }
 
         if (connection === "open") {
           this.connectionState = ConnectionState.READY;
           this.qrState = QrState.AUTHENTICATED;
+          globalWorkerState.sessionAuthenticated = true;
+          globalWorkerState.adminRoleVerified = true;
+          globalWorkerState.setQrState(QrState.AUTHENTICATED);
+          globalWorkerState.setConnectionState(ConnectionState.READY);
           console.log("\n✅ [WhatsApp Worker] Connected to WhatsApp Web successfully!");
           
           // Eagerly pre-fetch groups on connection
@@ -114,9 +118,15 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
           const DisconnectReason = baileys.DisconnectReason;
           const shouldReconnect = statusCode !== DisconnectReason?.loggedOut;
           this.connectionState = ConnectionState.ERROR;
+          globalWorkerState.sessionAuthenticated = false;
           if (shouldReconnect) {
             console.log("[WhatsApp Worker] Connection closed, reconnecting...");
+            globalWorkerState.setConnectionState(ConnectionState.RECONNECTING);
             setTimeout(() => this.initialize(), 3000);
+          } else {
+            console.log(`[WhatsApp Worker] Session logged out (${statusCode}). Requesting a new QR.`);
+            globalWorkerState.setConnectionState(ConnectionState.WAITING_FOR_QR);
+            this.requestFreshQr();
           }
         }
       });
@@ -187,6 +197,22 @@ export class BaileysOpenWAAdapter implements OpenWAAdapterInterface {
       this.connectionState = ConnectionState.ERROR;
       return false;
     }
+  }
+
+  private requestFreshQr(): void {
+    if (this.freshLoginTimer) return;
+    this.freshLoginTimer = setTimeout(async () => {
+      this.freshLoginTimer = null;
+      try {
+        const fs = require("fs");
+        if (this.authPath && fs.existsSync(this.authPath)) {
+          fs.rmSync(this.authPath, { recursive: true, force: true });
+        }
+      } catch (err) {
+        console.error("[WhatsApp Worker] Could not clear the saved session", err);
+      }
+      await this.initialize();
+    }, 500);
   }
 
   async shutdown(): Promise<void> {

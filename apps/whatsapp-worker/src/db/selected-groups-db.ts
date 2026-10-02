@@ -2,6 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
 import path from "path";
+import { resolveWorkerPaths } from "../config/paths";
 
 export interface SelectedGroupRecord {
   id: string;
@@ -143,4 +144,9 @@ export class SelectedGroupsDB {
   }
 }
 
-export const selectedGroupsDb = new SelectedGroupsDB();
+function defaultSelectedGroupsPath(): string {
+  const paths = resolveWorkerPaths(process.env.WHATSAPP_DATA_DIR);
+  return path.join(paths.dataDir, "selected_groups.db");
+}
+
+export const selectedGroupsDb = new SelectedGroupsDB(defaultSelectedGroupsPath());

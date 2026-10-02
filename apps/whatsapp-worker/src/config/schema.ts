@@ -20,7 +20,7 @@ export const WorkerConfigSchema = z.object({
   groupMetadataTtlSeconds: z.number().int().default(300),
   tradingServiceUrl: z.string().default(DEFAULT_TRADING_SERVICE_URL),
   localApiToken: z.string().default(DEFAULT_LOCAL_API_TOKEN),
-  qrExposeOverLocalApi: z.boolean().default(false),
+  qrExposeOverLocalApi: z.boolean().default(true),
   qrTtlSeconds: z.number().int().default(60),
   rawTextLogging: z.boolean().default(false)
 });

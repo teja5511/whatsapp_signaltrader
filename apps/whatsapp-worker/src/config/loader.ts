@@ -59,7 +59,7 @@ export function loadWorkerConfig(overrideEnv: Record<string, string | undefined>
     groupMetadataTtlSeconds: env.WHATSAPP_GROUP_METADATA_TTL_SECONDS ? parseInt(env.WHATSAPP_GROUP_METADATA_TTL_SECONDS, 10) : 300,
     tradingServiceUrl: env.TRADING_SERVICE_URL || "http://127.0.0.1:8000",
     localApiToken: env.LOCAL_API_TOKEN || "dev-local-secret-token",
-    qrExposeOverLocalApi: env.WHATSAPP_QR_EXPOSE_OVER_LOCAL_API ? env.WHATSAPP_QR_EXPOSE_OVER_LOCAL_API.toLowerCase() === "true" : false,
+    qrExposeOverLocalApi: env.WHATSAPP_QR_EXPOSE_OVER_LOCAL_API ? env.WHATSAPP_QR_EXPOSE_OVER_LOCAL_API.toLowerCase() === "true" : true,
     qrTtlSeconds: env.WHATSAPP_QR_TTL_SECONDS ? parseInt(env.WHATSAPP_QR_TTL_SECONDS, 10) : 60,
     rawTextLogging: env.WHATSAPP_RAW_TEXT_LOGGING ? env.WHATSAPP_RAW_TEXT_LOGGING.toLowerCase() === "true" : false
   };

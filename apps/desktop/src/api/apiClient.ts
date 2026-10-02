@@ -179,19 +179,23 @@ export class ApiClient {
 
   // WhatsApp Worker Status & Session
   async getWhatsAppStatus(): Promise<any> {
-    return this.request<any>("/api/v1/whatsapp/status", "GET", undefined, "worker");
+    return this.request<any>("/status", "GET", undefined, "worker");
   }
 
   async getWhatsAppSession(): Promise<any> {
-    return this.request<any>("/api/v1/whatsapp/session", "GET", undefined, "worker");
+    return this.request<any>("/session", "GET", undefined, "worker");
+  }
+
+  async getWhatsAppQr(): Promise<{ qr_state: string; connection_state: string; qr_image: string | null; qr_expires_at: string | null }> {
+    return this.request("/session/qr", "GET", undefined, "worker");
   }
 
   async getWhatsAppSpool(): Promise<any> {
-    return this.request<any>("/api/v1/whatsapp/spool", "GET", undefined, "worker");
+    return this.request<any>("/spool", "GET", undefined, "worker");
   }
 
   async resetWhatsAppSession(phrase: string): Promise<any> {
-    return this.request<any>("/api/v1/whatsapp/session/reset", "POST", { confirmation_phrase: phrase }, "worker");
+    return this.request<any>("/session/reset", "POST", { confirmation_phrase: phrase }, "worker");
   }
 
   async listWhatsAppGroups(): Promise<any[]> {
